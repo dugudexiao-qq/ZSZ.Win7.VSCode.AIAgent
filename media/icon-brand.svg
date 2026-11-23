@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <radialGradient id="board" cx="50%" cy="42%" r="72%">
+      <stop offset="0" stop-color="#0D3324"/>
+      <stop offset="0.62" stop-color="#082018"/>
+      <stop offset="1" stop-color="#04120C"/>
+    </radialGradient>
+    <linearGradient id="trace" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- PCB board -->
+  <rect width="128" height="128" rx="26" fill="url(#board)"/>
+
+  <!-- background traces -->
+  <g fill="none" stroke="#1E8F68" stroke-width="1.4" opacity="0.30" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 34h18l8-8h14"/>
+    <path d="M8 48h10l8 8h10"/>
+    <path d="M8 88h14l8-8h10"/>
+    <path d="M120 40h-16l-8 8h-12"/>
+    <path d="M120 92h-12l-8-8h-10"/>
+    <path d="M120 56h-8l-8-8h-10"/>
+  </g>
+  <g fill="#34D399" opacity="0.35">
+    <circle cx="48" cy="26" r="1.9"/><circle cx="26" cy="56" r="1.9"/>
+    <circle cx="40" cy="94" r="1.9"/><circle cx="88" cy="48" r="1.9"/>
+    <circle cx="104" cy="104" r="1.9"/><circle cx="102" cy="26" r="1.9"/>
+  </g>
+
+  <!-- chip package -->
+  <rect x="17" y="29" width="94" height="70" rx="7" fill="#0C2A1E" fill-opacity="0.55"
+        stroke="#2A9D75" stroke-width="1.3" stroke-opacity="0.55"/>
+  <g stroke="#B98A2E" stroke-width="2.2" stroke-linecap="round" opacity="0.75">
+    <path d="M10 38h7M10 50h7M10 62h7M10 74h7M10 86h7"/>
+    <path d="M111 38h7M111 50h7M111 62h7M111 74h7M111 86h7"/>
+    <path d="M30 22v7M45 22v7M60 22v7M75 22v7M90 22v7"/>
+    <path d="M30 99v7M45 99v7M60 99v7M75 99v7M90 99v7"/>
+  </g>
+
+  <!-- signal feed traces: letters connect into chip pins -->
+  <g fill="none" stroke="#1E8F68" stroke-width="2" opacity="0.7" stroke-linecap="round">
+    <path d="M28 48H18"/>
+    <path d="M100 80H110"/>
+    <path d="M72 50V34"/>
+  </g>
+
+  <!-- ZSZ as PCB traces (rounded S, avoids reading as "5") -->
+  <g fill="none" stroke="url(#trace)" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <path d="M28 48H46L28 80H46"/>
+    <path d="M72 50C72 44 54 44 54 55C54 64 72 60 72 69C72 80 54 80 54 74"/>
+    <path d="M82 48H100L82 80H100"/>
+  </g>
+
+  <!-- solder pads at trace endpoints -->
+  <g>
+    <g fill="#FBBF24"><circle cx="28" cy="48" r="3.6"/><circle cx="46" cy="80" r="3.6"/>
+      <circle cx="72" cy="50" r="3.6"/><circle cx="54" cy="74" r="3.6"/>
+      <circle cx="82" cy="48" r="3.6"/><circle cx="100" cy="80" r="3.6"/></g>
+    <g fill="#0A241A"><circle cx="28" cy="48" r="1.5"/><circle cx="46" cy="80" r="1.5"/>
+      <circle cx="72" cy="50" r="1.5"/><circle cx="54" cy="74" r="1.5"/>
+      <circle cx="82" cy="48" r="1.5"/><circle cx="100" cy="80" r="1.5"/></g>
+  </g>
+  <!-- vias at bends -->
+  <g fill="#7DD3FC" opacity="0.9">
+    <circle cx="46" cy="48" r="1.7"/><circle cx="28" cy="80" r="1.7"/>
+    <circle cx="54" cy="55" r="1.7"/><circle cx="72" cy="69" r="1.7"/>
+    <circle cx="100" cy="48" r="1.7"/><circle cx="82" cy="80" r="1.7"/>
+  </g>
+
+  <!-- silk-screen marks -->
+  <g stroke="#5EEAD4" stroke-width="0.9" opacity="0.28" fill="none">
+    <path d="M22 34h6M25 31v6"/><path d="M100 94h6M103 91v6"/>
+  </g>
+</svg>

@@ -1,0 +1,380 @@
+{
+  "name": "win7-ai-agent",
+  "displayName": "ZSZ.Win7.VSCode.AIAgent",
+  "description": "适用于 Windows 7 + VS Code 1.70.x 的本地大模型 AI Agent。",
+  "version": "1.9.3",
+  "publisher": "dugudexiao",
+  "icon": "media/icon.png",
+  "author": {
+    "name": "dugudexiao",
+    "email": "dugudexiao@sina.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://gitcode.com/dugudexiao/zsz.Win7.AIAgent.git"
+  },
+  "homepage": "https://gitcode.com/dugudexiao/zsz.Win7.AIAgent#readme",
+  "bugs": {
+    "url": "https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/issues",
+    "email": "dugudexiao@sina.com"
+  },
+  "qna": false,
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Machine Learning"
+  ],
+  "keywords": [
+    "windows7",
+    "agent",
+    "offline",
+    "legacy",
+    "qwen",
+    "local-llm",
+    "rules",
+    "memory",
+    "powershell"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onView:win7Agent.chatView",
+    "onCommand:win7Agent.openChat",
+    "onCommand:win7Agent.openChatPanel",
+    "onCommand:win7Agent.toggleWriteMode",
+    "onCommand:win7Agent.toggleShellConfirm",
+    "onCommand:win7Agent.toggleWriteConfirm",
+    "onCommand:win7Agent.toggleSubtaskMode",
+    "onCommand:win7Agent.setApiKey",
+    "onCommand:win7Agent.clearApiKey",
+    "onCommand:win7Agent.askSelection",
+    "onCommand:win7Agent.diagnose",
+    "onCommand:win7Agent.about",
+    "onCommand:win7Agent.setEndpoint",
+    "onCommand:win7Agent.openSettingsJson",
+    "onCommand:win7Agent.addRule",
+    "onCommand:win7Agent.manageRules",
+    "onCommand:win7Agent.manageLessons",
+    "onCommand:win7Agent.showPrompt",
+    "onCommand:win7Agent.importFile",
+    "onCommand:win7Agent.exportAnswer",
+    "onCommand:win7Agent.exportDiagnostics"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "win7Agent.openChat",
+        "title": "打开聊天 (Open Chat)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.openChatPanel",
+        "title": "在编辑器区域打开聊天（可与文件夹并排）(Open Chat in Editor)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.toggleWriteMode",
+        "title": "切换写入模式（只读/可写）(Toggle Write Mode)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.toggleShellConfirm",
+        "title": "切换命令确认（开/关）(Toggle Shell Confirmation)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.toggleWriteConfirm",
+        "title": "切换写入确认（开/关）(Toggle Write Confirmation)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.toggleSubtaskMode",
+        "title": "切换子任务模式（开/关）(Toggle Subtask Mode)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.setEndpoint",
+        "title": "设置服务地址 / 端口 (Set Server URL / Port)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.openSettingsJson",
+        "title": "打开 settings.json（备用方式）",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.setApiKey",
+        "title": "设置 API Key",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.clearApiKey",
+        "title": "清除 API Key",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.askSelection",
+        "title": "询问 Agent：解释选中代码 (Ask Agent About Selection)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.diagnose",
+        "title": "诊断连接 (Diagnose Connection)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.about",
+        "title": "关于 / 作者 (About / Author)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.addRule",
+        "title": "记住一条通用要求 (Remember a Standing Rule)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.manageRules",
+        "title": "管理规则与约束 (Manage Rules & Constraints)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.manageLessons",
+        "title": "管理自动总结的经验 (Manage Auto-Lessons)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.showPrompt",
+        "title": "查看生效提示词 (Show Effective Prompt)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.importFile",
+        "title": "导入文件到聊天 (Import File into Chat)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.exportAnswer",
+        "title": "保存最后回答到文件 (Save Last Answer to File)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.exportDiagnostics",
+        "title": "导出诊断包 (Export Diagnostics)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "win7-agent",
+          "title": "ZSZ.Win7.VSCode.AIAgent",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "win7-agent": [
+        {
+          "id": "win7Agent.chatView",
+          "name": "对话 (Chat)",
+          "type": "webview"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "win7Agent.askSelection",
+          "when": "editorHasSelection",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "type": "object",
+      "title": "ZSZ.Win7.VSCode.AIAgent · 插件设置",
+      "properties": {
+        "win7Agent.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI 兼容的模型服务地址（含路径，通常形如 http://主机:端口/v1）。本扩展不内置任何地址或端口，请按你自己的模型服务填写。命令面板运行「ZSZ.Win7.VSCode.AIAgent: 设置服务地址 / 端口」即可交互填写。"
+        },
+        "win7Agent.model": {
+          "type": "string",
+          "default": "",
+          "description": "传给 /chat/completions 的模型名，必须与你的模型服务暴露的 alias / ID 完全一致，否则会返回 404。本扩展不内置模型名，请按你的服务填写。"
+        },
+        "win7Agent.systemPrompt": {
+          "type": "string",
+          "default": "你是在 Windows 7 的 VS Code 1.70 中运行的编程助手。回答简洁、直接行动：用户给出明确任务时选合理默认方案执行，不要反复追问或停在「需要澄清」。\n需要调用工具时，只回复一个 JSON 对象（一条回复只放一个调用，不要夹在多余文字里）：{\"tool\":\"readFile\",\"args\":{\"path\":\"src/a.js\"}}。\n可用工具：readFile、listFiles、getActiveFile、importFile、insertText、saveText、createFile、runCommand、runSubtask（子任务模式开启时可用）。\n- 新建文件用 createFile（args: {path, text, overwrite?}），自动创建缺失的父目录；文件已存在时默认拒绝，需显式 overwrite=true。\n- 改写已有文件用 saveText（args: {path, text}）；insertText 只能插入到当前打开的编辑器。\n- runCommand 用 args.command、可选 args.shell（powershell/cmd）执行本机命令，不受工作区路径限制。整目录复制/批量文件操作（含二进制和大文件）直接用一条 PowerShell 的 Copy-Item -Recurse（shell 填 powershell）或 robocopy /E（cmd 也可）完成，不要用 readFile+createFile 逐文件搬运；目标默认定在工作区内的 backup/ 子目录即可。\n不需要工具时正常回答。",
+          "description": "基础系统提示词。每次请求前会自动在其后追加「长期通用要求」「代码级硬约束」「工具能力与工作方式」「子任务模式」。工具调用必须用纯 JSON 格式。v1.1.0 起工具轮数上限与历史消息数均可配置。若你改过这一项，编译期仍会兜底注入工具能力说明。"
+        },
+        "win7Agent.maxToolRounds": {
+          "type": "number",
+          "default": 20,
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "每条用户消息最多连续调用工具的轮数。v1.1.0 起取消原来的 10 轮硬上限，可设到 1000；设为 0 可完全禁用工具。注意：每轮都是一次完整的模型请求，调大后单次任务耗时与用量会同步增加。"
+        },
+        "win7Agent.maxHistoryMessages": {
+          "type": "number",
+          "default": 100,
+          "minimum": 2,
+          "maximum": 2000,
+          "description": "每次请求携带多少条历史消息（1 轮问答 = 用户 + 助手 2 条）。v1.1.0 起替代原来的硬编码 20 条（10 轮）——之前的版本到第 11 轮就会丢掉更早的上下文。默认 100 条约 50 轮，可调到 2000；本地模型上下文窗口有限，过长会被模型服务截断。"
+        },
+        "win7Agent.maxContextChars": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 2000,
+          "maximum": 200000,
+          "description": "上下文总字符预算（默认 8000）。历史消息按这个预算从最新往前裁剪，最新的用户消息永不裁掉。中文约 1 字符 1 token，按模型上下文窗口调整：8k 模型建议 6000-8000，16k 以上可调到 14000。"
+        },
+        "win7Agent.subtaskMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "子任务模式（默认关闭）：开启后允许 Agent 用 runSubtask 把独立子任务交给子代理执行（独立上下文，只回传结论），复杂任务可逐项推进并看到进度。有数量与嵌套层数上限，可用聊天面板菜单或命令面板开关。"
+        },
+        "win7Agent.maxSubtasksPerRun": {
+          "type": "number",
+          "default": 6,
+          "minimum": 0,
+          "maximum": 50,
+          "description": "一条用户消息内最多可委派多少个子任务（子进程式的嵌套子任务共享这个额度）。默认 6，设 0 等于禁用子任务委派。"
+        },
+        "win7Agent.stream": {
+          "type": "boolean",
+          "default": false,
+          "description": "逐字显示回答（打字机效果）。由扩展在本地分片回放，不使用服务端 SSE，因此开启后工具调用照常执行。"
+        },
+        "win7Agent.timeoutMs": {
+          "type": "number",
+          "default": 1000000,
+          "minimum": 5000,
+          "description": "HTTP 请求超时时间（毫秒）。默认 1000000 毫秒 = 1000 秒（约 16.7 分钟），用于大型本地 GGUF 模型首次加载较慢的情况；同时作为无响应超时与整体墙钟上限。「诊断连接」命令使用独立的 15 秒超时。"
+        },
+        "win7Agent.allowWrite": {
+          "type": "boolean",
+          "default": false,
+          "description": "旧版写入开关。仍受 win7Agent.constraints.readOnly 与 deniedTools 约束，且以后者为准。"
+        },
+        "win7Agent.extraCaFile": {
+          "type": "string",
+          "default": "",
+          "description": "可选：包含额外根证书的 PEM 文件绝对路径。Node 内置根证书始终保留，证书校验永不关闭。适用于企业 MITM 证书。"
+        },
+        "win7Agent.defaultRules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "回答一律使用简体中文，先给结论再给理由",
+            "不确定的地方明确说不知道，不要编造文件路径、API 或运行结果"
+          ],
+          "description": "扩展出厂自带的通用要求，保存在 settings.json，可随项目提交。每次请求都会注入系统提示词。"
+        },
+        "win7Agent.rememberRules": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用用户长期记住的通用要求。保存在 VS Code globalState，重启或重载窗口后依然有效。"
+        },
+        "win7Agent.autoLearn": {
+          "type": "boolean",
+          "default": true,
+          "description": "自动学习：工具报错之后又被修好时，把解决方式记成一条经验，在之后每次请求前注入提示词（存于 globalState，与「长期要求」分开存储、分开计数，最多 12 条）。关闭后不再新增，已记下的仍然生效，可在菜单「经验记忆」里逐条删除。"
+        },
+        "win7Agent.constraints.readOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "代码级硬约束：无论模型如何要求，写操作都会在执行前被拦截。"
+        },
+        "win7Agent.constraints.deniedTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "insertText"
+          ],
+          "description": "代码级工具黑名单，在工具函数执行前检查。自 0.3.1 起默认允许 runCommand；如需彻底关闭 Shell，把 runCommand 加回此列表。"
+        },
+        "win7Agent.constraints.allowedReadGlobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/*"
+          ],
+          "description": "readFile / importFile 可读取的工作区相对路径白名单（glob）。示例：[\"src/**/*\", \"docs/*.md\"]。访问工作区外的路径始终被禁止。"
+        },
+        "win7Agent.constraints.requireToolApproval": {
+          "type": "boolean",
+          "default": false,
+          "description": "每次调用工具前都弹出确认框。首次试用新模型时建议开启。"
+        },
+        "win7Agent.constraints.allowShell": {
+          "type": "boolean",
+          "default": true,
+          "description": "PowerShell / CMD 执行的代码级总开关，默认开启。AI 可使用任意 PowerShell / CMD 命令，每条命令仍要过逐次弹窗确认、工具黑名单以及进程超时 / 强杀保护。设为 false 可彻底关闭 Shell。"
+        },
+        "win7Agent.constraints.confirmShell": {
+          "type": "boolean",
+          "default": true,
+          "description": "执行前弹窗显示完整命令。这是模型提议的命令真正运行前最后一道人工关卡；关闭后 AI 提议的命令将不再经你确认而直接运行。若关闭后仍弹窗：一是工作区 .vscode/settings.json 里的同名设置优先级更高（v1.1.0 起菜单开关会写到实际生效的作用域）；二是你可能同时开了「每次工具调用都确认」(constraints.requireToolApproval)，那是另一道关卡，请用「查看生效提示词与约束」命令查看具体生效值。"
+        },
+        "win7Agent.constraints.confirmWrite": {
+          "type": "boolean",
+          "default": true,
+          "description": "写入确认：新建/改写文件（createFile / saveText / 插入）前弹窗确认。默认开启；关闭后写入直接生效、不再弹窗（写入模式本身仍须开启）。v1.2.0 新增，此前版本写入会无条件弹窗、无法关闭。关闭后若仍弹窗，请检查工作区设置覆盖，或是否开着「每次工具调用都确认」(requireToolApproval)。"
+        },
+        "win7Agent.confirmTimeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 10000,
+          "maximum": 900000,
+          "description": "确认弹窗等待多久（毫秒，默认 120000 = 120 秒）。命令确认、写入确认、工具审批三种弹窗都受它约束：超时后该操作自动视为被拒绝，Agent 不再等待、继续往下走，避免弹窗被遮住或无人点击时整个任务永久挂起。注意：VS Code 1.70 无法用代码关闭弹窗，超时后屏幕上可能仍留有对话框，但再点也不会执行那次操作，可直接忽略或按 Esc 关闭。若不想弹窗，请关闭对应的确认开关。"
+        },
+        "win7Agent.taskCheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "完成度自检（默认开启）：每轮回答结束后，用这一轮真实的工具调用记录核对模型的结论，在回答下方标出「有实际动作，已完成」「声称已完成，但一步都没做」「动作全部失败」等结论，并列出工具次数、成功/失败数、写入的文件是否真在磁盘上。只判断、不阻断；纯问答和全部成功的只读任务不显示。这是启发式判断，不是铁证，可关闭。"
+        },
+        "win7Agent.constraints.allowedShellCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "命令前缀白名单，默认留空 = 允许 AI 使用任意 PowerShell / CMD 命令（每条命令仍会弹窗确认）。如需限制，填入允许的命令前缀（不区分大小写，按开头匹配），此时只有以某个前缀开头的命令才放行。留空即不限制命令种类。注意：白名单只是可选项，真正的安全关卡是下方的逐条弹窗确认。"
+        },
+        "win7Agent.process.timeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 1000,
+          "description": "单条 PowerShell / CMD 命令的墙钟超时。超时后用 taskkill /T /F 杀掉整棵进程树。"
+        },
+        "win7Agent.process.idleTimeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "minimum": 1000,
+          "description": "无输出超时。子进程超过该时间没有任何输出，即视为卡住并杀掉。"
+        },
+        "win7Agent.process.maxOutputBytes": {
+          "type": "number",
+          "default": 65536,
+          "minimum": 1024,
+          "description": "stdout + stderr 合计输出上限，超出部分丢弃，防止内存耗尽。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "selftest": "node scripts/selftest.js",
+    "smoke": "node scripts/smoke-host.js",
+    "audit": "node scripts/audit.js",
+    "pack": "node scripts/pack-vsix.js"
+  }
+}

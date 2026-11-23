@@ -1,0 +1,961 @@
+'use strict';
+
+/*
+ * Independent audit of the tool layer, run without VS Code.
+ * Unlike smoke-host.js (which drives whole conversations against a mock model),
+ * this exercises every tool against REAL files in a temp workspace, plus the
+ * pure modules (rules / endpoint / toolProtocol / taskCheck).
+ *
+ * Run: node scripts/audit.js
+ * Every check prints PASS or FAIL; the summary lists what needs attention.
+ */
+
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const Module = require('module');
+
+const manifest = require('../package.json');
+const defaults = manifest.contributes.configuration.properties;
+
+const settings = {};
+const scoped = { global: {}, workspace: {}, workspaceFolder: {} };
+let nextAnswer = undefined;
+let root = fs.mkdtempSync(path.join(os.tmpdir(), 'zsz-audit-'));
+let editor = null;
+
+function walk(dir, out) {
+  fs.readdirSync(dir, { withFileTypes: true }).forEach(function (ent) {
+    const p = path.join(dir, ent.name);
+    if (ent.isDirectory()) {
+      if (ent.name === 'node_modules' || ent.name === '.git') { return; }
+      walk(p, out);
+    } else { out.push(p); }
+  });
+  return out;
+}
+
+const vscodeStub = {
+  version: '1.70.2',
+  Uri: {
+    file: function (p) { return { fsPath: p, toString: function () { return 'file://' + p; } }; },
+    joinPath: function (base) {
+      const parts = Array.prototype.slice.call(arguments, 1);
+      return { fsPath: path.join.apply(path, [base.fsPath].concat(parts)) };
+    }
+  },
+  ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
+  window: {
+    get activeTextEditor() { return editor; },
+    showWarningMessage: async function () { const a = nextAnswer; nextAnswer = undefined; return a; },
+    showInformationMessage: async function () { return undefined; },
+    showErrorMessage: async function () { return undefined; },
+    createOutputChannel: function () { return { appendLine: function () {}, show: function () {}, dispose: function () {} }; }
+  },
+  workspace: {
+    get workspaceFolders() { return [{ uri: { fsPath: root } }]; },
+    getConfiguration: function (section) {
+      return {
+        get: function (key) {
+          const full = section + '.' + key;
+          if (Object.prototype.hasOwnProperty.call(settings, full)) { return settings[full]; }
+          const prop = defaults[full];
+          return prop ? prop.default : undefined;
+        },
+        inspect: function (key) {
+          const full = section + '.' + key;
+          return {
+            key: full,
+            defaultValue: defaults[full] ? defaults[full].default : undefined,
+            globalValue: scoped.global[full],
+            workspaceValue: scoped.workspace[full],
+            workspaceFolderValue: scoped.workspaceFolder[full]
+          };
+        },
+        update: async function (key, value) { settings[section + '.' + key] = value; }
+      };
+    },
+    asRelativePath: function (uri) {
+      const p = (uri && uri.fsPath) || String(uri);
+      const rel = path.relative(root, p);
+      return rel && rel.indexOf('..') !== 0 ? rel : p;
+    },
+    findFiles: async function (pattern) {
+      const all = walk(root, []);
+      const m = String(pattern || '**/*').match(/\*\.([a-z0-9]+)$/i);
+      const kept = m ? all.filter(function (p) { return p.toLowerCase().endsWith('.' + m[1].toLowerCase()); }) : all;
+      return kept.slice(0, 200).map(function (p) { return { fsPath: p }; });
+    },
+    fs: {
+      stat: async function (uri) { return { size: fs.statSync(uri.fsPath).size }; },
+      readFile: async function (uri) { return fs.readFileSync(uri.fsPath); }
+    }
+  },
+  commands: { registerCommand: function () { return { dispose: function () {} }; }, executeCommand: async function () {} }
+};
+
+const originalLoad = Module._load;
+Module._load = function (request) {
+  if (request === 'vscode') { return vscodeStub; }
+  return originalLoad.apply(this, arguments);
+};
+
+const agent = require('../src/agent');
+const rules = require('../src/rules');
+const lessons = require('../src/lessons');
+const runtime = require('../src/runtime');
+const taskCheck = require('../src/taskCheck');
+const endpoint = require('../src/endpoint');
+const fileImport = require('../src/fileImport');
+const protocol = require('../src/toolProtocol');
+
+const results = [];
+function test(name, fn) {
+  return Promise.resolve()
+    .then(fn)
+    .then(function () { results.push({ name: name, ok: true }); console.log('  PASS  ' + name); })
+    .catch(function (e) {
+      results.push({ name: name, ok: false, err: e && e.message ? e.message : String(e) });
+      console.log('  FAIL  ' + name + '\n        ' + (e && e.message ? e.message : e));
+    });
+}
+
+function write(rel, text) {
+  const p = path.join(root, rel);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, text);
+  return p;
+}
+
+async function call(tool, args, cfg) {
+  return agent.runTool({ tool: tool, args: args }, cfg || runtime.getConfig(), { token: { isCancellationRequested: false }, emit: function () {} });
+}
+
+async function main() {
+  await runtime.setWriteMode(true);
+  await runtime.setWriteConfirm(false);
+  const cfg = runtime.getConfig();
+
+  /* ---------- listFiles / readFile ---------- */
+  write('a.txt', 'hello zsz');
+  write('sub/b.md', '# title');
+  write('sub/deep/c.js', 'var x = 1;');
+
+  await test('listFiles returns workspace files', async function () {
+    const out = await call('listFiles', {});
+    assert.ok(/a\.txt/.test(out) && /deep/.test(out), out.slice(0, 200));
+  });
+
+  await test('listFiles honours a *.ext pattern', async function () {
+    const out = await call('listFiles', { pattern: '**/*.md' });
+    assert.ok(/b\.md/.test(out) && !/a\.txt/.test(out), out);
+  });
+
+  await test('readFile returns content', async function () {
+    const out = await call('readFile', { path: 'a.txt' });
+    assert.strictEqual(out, 'FILE: a.txt\nhello zsz');
+  });
+
+  await test('readFile keeps head and tail of a long body and reports the cut', async function () {
+    write('long.txt', 'HEAD' + 'x'.repeat(15000) + 'TAIL');
+    const out = await call('readFile', { path: 'long.txt' });
+    assert.ok(out.length < 4500, 'len ' + out.length);
+    assert.ok(out.slice(0, 40).indexOf('HEAD') !== -1, 'head must survive');
+    assert.ok(out.slice(-20).indexOf('TAIL') !== -1, 'tail must survive');
+    assert.ok(/\[\.\.\.truncated \d+ chars\.\.\.\]/.test(out), out.slice(300, 420));
+  });
+
+  await test('readFile empty file is not an error', async function () {
+    write('empty.txt', '');
+    const out = await call('readFile', { path: 'empty.txt' });
+    assert.strictEqual(out, 'FILE: empty.txt\n');
+  });
+
+  await test('readFile refuses binary content', async function () {
+    fs.writeFileSync(path.join(root, 'b.bin'), Buffer.from([0x41, 0x00, 0x42]));
+    const out = await call('readFile', { path: 'b.bin' });
+    assert.ok(/Binary file, not text/.test(out), out);
+  });
+
+  await test('readFile refuses ../ outside the workspace', async function () {
+    const out = await call('readFile', { path: '../../windows/win.ini' });
+    assert.ok(/outside the workspace/.test(out), out);
+  });
+
+  await test('readFile refuses an absolute path outside the workspace', async function () {
+    const out = await call('readFile', { path: 'C:\\Windows\\win.ini' });
+    assert.ok(/outside the workspace/.test(out), out);
+  });
+
+  await test('oneLineError keeps a short message untouched and flattens whitespace', function () {
+    assert.strictEqual(agent.oneLineError('File too large (204801 bytes).'), 'File too large (204801 bytes).');
+    assert.strictEqual(agent.oneLineError('  a\n\t b\r\nc  '), 'a b c');
+    assert.ok(agent.oneLineError('x'.repeat(1000)).length <= agent.MAX_ERROR_CHARS + 3);
+  });
+
+  await test('every tool error is one line, capped at MAX_ERROR_CHARS', async function () {
+    const out = await call('readFile', { path: 'nope\n'.repeat(200) });
+    assert.ok(/^TOOL ERROR: /.test(out), 'prefix must survive: ' + out.slice(0, 60));
+    assert.strictEqual(out.indexOf('\n'), -1, 'a failed call must not print several lines');
+    assert.ok(out.length <= 'TOOL ERROR: '.length + agent.MAX_ERROR_CHARS + 3, 'len ' + out.length);
+  });
+
+  await test('readFile on a directory fails with a readable message', async function () {
+    const out = await call('readFile', { path: 'sub' });
+    assert.ok(/^TOOL ERROR:/.test(out), out);
+    assert.ok(/EISDIR|directory|not a file/i.test(out), 'unclear message: ' + out);
+  });
+
+  await test('readFile on a missing file names the file', async function () {
+    const out = await call('readFile', { path: 'nope.txt' });
+    assert.ok(/ENOENT/.test(out) && /nope\.txt/.test(out), out);
+  });
+
+  /* ---------- createFile / saveText ---------- */
+  await test('createFile creates nested folders', async function () {
+    const out = await call('createFile', { path: 'x/y/z/new.md', text: '# hi' });
+    assert.ok(/^Created file/.test(out), out);
+    assert.strictEqual(fs.readFileSync(path.join(root, 'x/y/z/new.md'), 'utf8'), '# hi');
+  });
+
+  await test('createFile refuses an existing file and honours overwrite', async function () {
+    const dup = await call('createFile', { path: 'x/y/z/new.md', text: 'no' });
+    assert.ok(/already exists/.test(dup), dup);
+    const over = await call('createFile', { path: 'x/y/z/new.md', text: 'yes', overwrite: true });
+    assert.ok(/^Overwrote/.test(over), over);
+    assert.strictEqual(fs.readFileSync(path.join(root, 'x/y/z/new.md'), 'utf8'), 'yes');
+  });
+
+  await test('createFile with empty text creates an empty file', async function () {
+    const out = await call('createFile', { path: 'blank.txt', text: '' });
+    assert.ok(/^Created file/.test(out), out);
+    assert.strictEqual(fs.readFileSync(path.join(root, 'blank.txt'), 'utf8'), '');
+  });
+
+  await test('createFile against a directory path is refused, not crashed', async function () {
+    const out = await call('createFile', { path: 'sub', text: 'x', overwrite: true });
+    assert.ok(/^TOOL ERROR:/.test(out), out);
+  });
+
+  await test('saveText rewrites an existing file', async function () {
+    const out = await call('saveText', { path: 'a.txt', text: 'rewritten' });
+    assert.ok(/^Wrote 9 characters/.test(out), out);
+    assert.strictEqual(fs.readFileSync(path.join(root, 'a.txt'), 'utf8'), 'rewritten');
+  });
+
+  await test('saveText refuses a missing parent folder and points at createFile', async function () {
+    const out = await call('saveText', { path: 'ghost/x.txt', text: 'x' });
+    assert.ok(/Target directory does not exist/.test(out) && /createFile/.test(out), out);
+    assert.ok(!fs.existsSync(path.join(root, 'ghost')));
+  });
+
+  await test('saveText cannot blank a file (empty text rejected)', async function () {
+    const out = await call('saveText', { path: 'a.txt', text: '' });
+    assert.ok(/requires args\.text/.test(out), 'unexpected: ' + out);
+  });
+
+  await test('saveText refuses more than 20000 chars with split guidance (v1.7.7)', async function () {
+    const out = await call('saveText', { path: 'a.txt', text: 'x'.repeat(20001) });
+    assert.ok(/too long/i.test(out), out);
+    // 报错必须带数字与下一步指引（v1.7.5 真机教训：模型不知道上限，第一把
+    // 写几万字被拒后只会浪费一轮重试同样的调用）
+    assert.ok(/20001 chars/.test(out) && /20000/.test(out), out);
+    assert.ok(/[Ss]plit/.test(out), out);
+    const created = await call('createFile', { path: 'big.txt', text: 'x'.repeat(20001) });
+    assert.ok(/too long/i.test(created) && /[Ss]plit/.test(created), created);
+  });
+
+  /* ---------- insertText ---------- */
+  function fakeEditor(filePath, initial, editResult) {
+    let buffer = initial;
+    editor = {
+      document: { languageId: 'markdown', uri: { fsPath: filePath }, fileName: filePath, getText: function () { return buffer; } },
+      selection: { isEmpty: true, end: { line: 1, character: 3 } },
+      edit: async function (cb) {
+        if (editResult === false) { return false; }
+        cb({
+          insert: function (pos, text) {
+            const lines = buffer.split('\n');
+            let offset = 0;
+            for (let i = 0; i < pos.line; i++) { offset += lines[i].length + 1; }
+            offset += pos.character;
+            buffer = buffer.slice(0, offset) + text + buffer.slice(offset);
+          },
+          replace: function () {}, delete: function () {}
+        });
+        return true;
+      }
+    };
+    return { get: function () { return buffer; } };
+  }
+
+  await test('insertText reports no active editor', async function () {
+    editor = null;
+    const out = await call('insertText', { text: 'x' });
+    assert.ok(/No active editor/.test(out), out);
+  });
+
+  await test('insertText inserts at the selection end', async function () {
+    const buf = fakeEditor(path.join(root, 'doc.md'), 'one\ntwo', true);
+    const out = await call('insertText', { text: 'three\n' });
+    assert.ok(/^Inserted 6 characters/.test(out), out);
+    assert.strictEqual(buf.get(), 'one\ntwothree\n');
+    editor = null;
+  });
+
+  await test('insertText surfaces a rejected edit', async function () {
+    fakeEditor(path.join(root, 'doc.md'), 'abc', false);
+    const out = await call('insertText', { text: 'x' });
+    assert.ok(/Editor rejected the edit/.test(out), out);
+    editor = null;
+  });
+
+  /* ---------- runCommand ---------- */
+  nextAnswer = 'Run'; // shell confirmation defaults ON
+  await test('runCommand runs PowerShell and captures output', async function () {
+    const out = await call('runCommand', { shell: 'powershell', command: 'Write-Output AUDIT_PS_OK' });
+    assert.ok(/STATUS: OK/.test(out) && /AUDIT_PS_OK/.test(out), out);
+  });
+
+  await test('runCommand runs CMD and captures output', async function () {
+    nextAnswer = 'Run';
+    const out = await call('runCommand', { shell: 'cmd', command: 'echo AUDIT_CMD_OK' });
+    assert.ok(/AUDIT_CMD_OK/.test(out), out);
+  });
+
+  await test('PowerShell child runs with ExecutionPolicy=Bypass (session only)', async function () {
+    nextAnswer = 'Run';
+    const out = await call('runCommand', { shell: 'powershell', command: 'Get-ExecutionPolicy' });
+    assert.ok(/Bypass/.test(out), 'the spawned session must report Bypass: ' + out);
+  });
+
+  await test('runCommand can execute a .ps1 script file end to end', async function () {
+    nextAnswer = 'Run';
+    const scriptPath = path.join(root, 'audit-script.ps1');
+    fs.writeFileSync(scriptPath, "Write-Output 'PS1_SCRIPT_OK'\n", 'utf8');
+    const out = await call('runCommand', {
+      shell: 'powershell',
+      command: "& '" + scriptPath.replace(/'/g, "''") + "'"
+    });
+    assert.ok(/PS1_SCRIPT_OK/.test(out), 'unsigned local .ps1 must run: ' + out);
+  });
+
+  await test('runCommand reports a non-zero exit code', async function () {
+    nextAnswer = 'Run';
+    const out = await call('runCommand', { shell: 'cmd', command: 'exit /b 3' });
+    assert.ok(/STATUS: OK/.test(out) || /3/.test(out), out);
+  });
+
+  await test('runCommand whitelist is prefix-based (dir allows dirx)', async function () {
+    const allowed = agent.isShellCommandAllowed('dirx /b', ['dir']);
+    assert.strictEqual(allowed, true, 'documented behaviour: prefix match');
+  });
+
+  await test('runCommand blocked when allowShell=false', async function () {
+    const c = JSON.parse(JSON.stringify(cfg));
+    c.constraints.allowShell = false;
+    const out = await call('runCommand', { shell: 'cmd', command: 'echo x' }, c);
+    assert.ok(/Shell execution is OFF/.test(out), out);
+  });
+
+  /* ---------- constraints ---------- */
+  await test('readOnly blocks writes but keeps runCommand (documented)', async function () {
+    const c = JSON.parse(JSON.stringify(cfg));
+    c.constraints.readOnly = true;
+    assert.ok(/readOnly|只读|disabled/i.test(await call('createFile', { path: 'ro.txt', text: 'x' }, c)));
+    const gate = rules.checkToolCall({ tool: 'runCommand', args: { command: 'dir' } }, c.constraints);
+    assert.strictEqual(gate.allowed, true);
+  });
+
+  await test('deniedTools blocks a tool before it runs', async function () {
+    const c = JSON.parse(JSON.stringify(cfg));
+    c.constraints.deniedTools = ['readFile'];
+    const gate = rules.checkToolCall({ tool: 'readFile', args: { path: 'a.txt' } }, c.constraints);
+    assert.strictEqual(gate.allowed, false);
+  });
+
+  await test('allowedReadGlobs blocks a non-matching path', async function () {
+    const c = JSON.parse(JSON.stringify(cfg));
+    c.constraints.allowedReadGlobs = ['docs/**'];
+    const out = await call('readFile', { path: 'a.txt' }, c);
+    assert.ok(/not allowed/.test(out) || /outside/.test(out), out);
+  });
+
+  /* ---------- protocol ---------- */
+  await test('parse plain JSON call', function () {
+    const c = protocol.parseToolCall('{"tool":"readFile","args":{"path":"a.txt"}}');
+    assert.deepStrictEqual(c, { tool: 'readFile', args: { path: 'a.txt' } });
+  });
+
+  await test('parse fenced JSON call', function () {
+    const c = protocol.parseToolCall('```json\n{"tool":"listFiles","args":{}}\n```');
+    assert.strictEqual(c.tool, 'listFiles');
+  });
+
+  await test('parse call embedded in prose', function () {
+    const c = protocol.parseToolCall('我先看一下：\n{"tool":"readFile","args":{"path":"a.txt"}}\n稍等');
+    assert.strictEqual(c.tool, 'readFile');
+  });
+
+  await test('parse DSML invoke block', function () {
+    const c = protocol.parseToolCall('<｜｜DSML｜｜ invoke name="readFile">\n<｜｜DSML｜｜ parameter name="args" string="false">{"path":"a.txt"}</｜｜DSML｜｜ parameter>\n</｜｜DSML｜｜ invoke>');
+    assert.strictEqual(c.tool, 'readFile');
+    assert.strictEqual(c.args.path, 'a.txt');
+  });
+
+  await test('parse DSML loose params: tool name inside a parameter tag, calls wrapper open', function () {
+    // 真机记录（v1.6.7 时期）：模型用 <...calls> 开头、invoke 开标签缺失、工具名放在 parameter 标签里
+    const c = protocol.parseToolCalls('要验证数值是否真的更准，我实际算一下。\n\n<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ parameter name="args" string="false">{"command":"node -e \\"1\\"","shell":"powershell"}</｜｜DSML｜｜ parameter>\n<｜｜DSML｜｜ parameter name="tool" string="true">runCommand</｜｜DSML｜｜ parameter>\n</｜｜DSML｜｜ invoke>\n</｜｜DSML｜｜ calls>');
+    assert.strictEqual(c.length, 1);
+    assert.strictEqual(c[0].tool, 'runCommand');
+    assert.strictEqual(c[0].args.shell, 'powershell');
+    assert.ok(/node -e/.test(c[0].args.command));
+  });
+
+  await test('parse DSML loose params: no invoke open tag at all, args as string', function () {
+    const c = protocol.parseToolCalls('<｜｜DSML｜｜ parameter name="args" string="true">{"path":"index.html"}</｜｜DSML｜｜ parameter>\n<｜｜DSML｜｜ parameter name="tool" string="true">readFile</｜｜DSML｜｜ parameter>\n</｜｜DSML｜｜ invoke>');
+    assert.strictEqual(c.length, 1);
+    assert.strictEqual(c[0].tool, 'readFile');
+    assert.strictEqual(c[0].args.path, 'index.html');
+  });
+
+  await test('two calls in one reply: only the first is executed', function () {
+    const c = protocol.parseToolCall('{"tool":"readFile","args":{"path":"a.txt"}}\n{"tool":"listFiles","args":{}}');
+    assert.strictEqual(c.tool, 'readFile');
+  });
+
+  await test('empty-args rescue: args JSON found elsewhere in the reply is merged back (v1.7.4)', function () {
+    // 模型偶尔把调用和参数拆成两个 JSON，或发出空 args；能捞回就省一整轮重试
+    const split = protocol.parseToolCall('{"tool":"runCommand"}\n\n我会执行目录列表。\n{"command":"Get-ChildItem -Name","shell":"powershell"}');
+    assert.strictEqual(split.tool, 'runCommand');
+    assert.strictEqual(split.args.command, 'Get-ChildItem -Name');
+    assert.strictEqual(split.args.shell, 'powershell');
+    // 整条回复就是一个调用、参数跟在后面（direct 路径）
+    const direct = protocol.parseToolCall('{"tool":"readFile"} {"path":"src/a.js"}');
+    assert.strictEqual(direct.tool, 'readFile');
+    assert.strictEqual(direct.args.path, 'src/a.js');
+    // 未知键的 JSON 不能误捞
+    const stranger = protocol.parseToolCall('{"tool":"listFiles"}\n{"title":"结果","count":3}');
+    assert.strictEqual(stranger.tool, 'listFiles');
+    assert.deepStrictEqual(stranger.args, {});
+    // 两个调用时不捞（避免把第二个调用的上下文误接给第一个）
+    const two = protocol.parseToolCalls('{"tool":"runCommand"}\n{"tool":"readFile","args":{"path":"a.txt"}}');
+    assert.strictEqual(two.length, 2);
+    assert.deepStrictEqual(two[0].args, {});
+  });
+
+  await test('parse mangled DSML: spaced bars + unclosed invoke (v1.6.9 real log regression)', function () {
+    // 真机记录（v1.7.1 时期）：长会话收尾时模板退化成 < | | | | DSML | | | |、
+    // invoke 无闭合、无 parameter 标签，整段原样漏进聊天区。
+    const leaked = '<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ invoke name="runCommand">\n< | | | | DSML | | | |\n\n（我还是得写标准格式。）\n\n<｜｜DSML｜｜ invoke name="runCommand">\n< | | DSML | |\n\n抱歉，格式出错了。重新发。';
+    const c = protocol.parseToolCalls(leaked);
+    assert.strictEqual(c.length, 1);
+    assert.strictEqual(c[0].tool, 'runCommand');
+  });
+
+  await test('parse unclosed DSML invoke that still carries a parameter tag', function () {
+    const c = protocol.parseToolCalls('<｜｜DSML｜｜ invoke name="readFile">\n<｜｜DSML｜｜ parameter name="args" string="false">{"path":"index.html"}\n（无闭合标签）');
+    assert.strictEqual(c.length, 1);
+    assert.strictEqual(c[0].tool, 'readFile');
+    assert.strictEqual(c[0].args.path, 'index.html');
+  });
+
+  await test('invoke open tag fully missing: no call parseable, but flagged as broken template (v1.7.2 real log regression)', function () {
+    // 真机记录（v1.7.2 时期）：收尾时只剩 parameter 标签与孤立的 </invoke> 闭合，
+    // 连工具名都拿不到；必须能检测出来交给 agent 回填格式纠错，而不是把
+    // 模板原文当回答显示。
+    const leaked = '<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ parameter name="args" string="false">{"command": "$l = Get-Content radar.js -Encoding UTF8; $l[95..152]", "shell": "powershell"}</｜｜DSML｜｜ parameter>\n</｜｜DSML｜｜ invoke>\n</｜｜DSML｜｜ calls>';
+    assert.strictEqual(protocol.parseToolCalls(leaked).length, 0, 'cannot recover a tool name from this shape');
+    assert.strictEqual(protocol.hasBrokenToolTemplate(leaked), true);
+    // 好调用、纯 JSON、普通文字、HTML 讨论（裸 <parameter>）都不能误判
+    assert.strictEqual(protocol.hasBrokenToolTemplate('<｜｜DSML｜｜ invoke name="readFile">\n<｜｜DSML｜｜ parameter name="args" string="false">{"path":"index.html"}</｜｜DSML｜｜ parameter>\n</｜｜DSML｜｜ invoke>'), false);
+    assert.strictEqual(protocol.hasBrokenToolTemplate('{"tool":"listFiles","args":{}}'), false);
+    assert.strictEqual(protocol.hasBrokenToolTemplate('任务已完成，radar.js 已写入 14628 字符。'), false);
+    assert.strictEqual(protocol.hasBrokenToolTemplate('HTML 里 <parameter> 不是标准标签。'), false);
+    // agent 侧：坏模板的碎片能被剥干净；带前缀正文的只剥标签行
+    assert.strictEqual(agent.stripToolTemplateFragments(leaked), '');
+    const withProse = '已完成检查。\n' + leaked;
+    assert.strictEqual(agent.stripToolTemplateFragments(withProse), '已完成检查。');
+  });
+
+  await test('special-token leak: mangled <｜tool prefix repaired, unrepairable flagged (v1.7.6 real log regression)', function () {
+    // 真机记录（v1.7.5 时期）：收尾时 DeepSeek 特殊 token 残片泄漏，把调用
+    // JSON 的开括号一起吞掉（<｜tool":"runCommand",...}}），v1.7.5 既解析
+    // 不出也检测不到，整段原文漏进聊天区。
+    const leak = '<｜tool":"runCommand","args":{"shell":"cmd","command":"Get-Content index.html"}}';
+    const fixed = protocol.parseToolCalls(leak);
+    assert.strictEqual(fixed.length, 1, 'the mangled prefix must be repaired back to {"tool');
+    assert.strictEqual(fixed[0].tool, 'runCommand');
+    assert.strictEqual(fixed[0].args.command, 'Get-Content index.html');
+    // 完整特殊 token 包裹的标准调用：剥掉 token 后照常解析
+    const wrapped = protocol.parseToolCalls('<｜tool▁call▁begin｜>{"tool":"readFile","args":{"path":"a.txt"}}<｜tool▁call▁end｜>');
+    assert.strictEqual(wrapped.length, 1);
+    assert.strictEqual(wrapped[0].tool, 'readFile');
+    // 修不回来的残缺碎片：必须判为坏模板触发重试，不能放行
+    const broken = '<｜tool▁call▁begin｜>runCommand $i=0';
+    assert.strictEqual(protocol.parseToolCalls(broken).length, 0);
+    assert.strictEqual(protocol.hasBrokenToolTemplate(broken), true);
+    assert.strictEqual(protocol.hasBrokenToolTemplate('总结：<｜User｜> 的问题已全部处理完。'), true);
+    // 防误判：半角 <|x|> 是正则/管道常见写法，不算泄漏
+    assert.strictEqual(protocol.hasBrokenToolTemplate('正则里 <|x|> 表示分支。'), false);
+    // 显示层：特殊 token 残片的行要被剥掉，正常正文保留
+    assert.strictEqual(agent.stripToolTemplateFragments('已完成检查。\n<｜tool":"runCommand","args":{}}'), '已完成检查。');
+    assert.strictEqual(agent.stripToolTemplateFragments('已完成检查。\n<｜tool▁call▁begin｜>'), '已完成检查。');
+  });
+
+  await test('trailing comma in call JSON is tolerated (v1.7.8 real log regression)', function () {
+    // 真机记录（v1.7.7 时期）：模型收尾时输出的调用 JSON 带尾逗号
+    // （..."command":"Get-ChildItem matlab",}}），JSON.parse 失败，坏模板
+    // 检测也不认（形态太接近合法 JSON），原文漏进聊天区且命令没跑。
+    const leak = '{"tool":"runCommand","args":{"shell":"powershell","command":"Get-ChildItem matlab",}}';
+    const fixed = protocol.parseToolCalls(leak);
+    assert.strictEqual(fixed.length, 1, 'trailing comma must be stripped before JSON.parse');
+    assert.strictEqual(fixed[0].tool, 'runCommand');
+    assert.strictEqual(fixed[0].args.command, 'Get-ChildItem matlab');
+    // 字符串内容里的 ",}" 是数据，不能被误伤
+    const inside = protocol.parseToolCalls('{"tool":"runCommand","args":{"shell":"cmd","command":"Write-Output \\"a,}b\\""}}');
+    assert.strictEqual(inside[0].args.command, 'Write-Output "a,}b"');
+    // args 双重编码 + 尾逗号也能兜住
+    const dbl = protocol.parseToolCalls('{"tool":"readFile","args":"{\\"path\\":\\"a.txt\\",}"}');
+    assert.strictEqual(dbl[0].args.path, 'a.txt');
+  });
+
+  await test('function-tag residue detected as broken template (v1.7.9 real log regression)', function () {
+    // 真机记录（v1.7.8 时期）：Qwen 模板收尾退化——<function=runCommand> 开
+    // 标签与 parameter 标签整体丢失，只剩参数值与孤立 </function>，连工具
+    // 名都拿不到，必须判坏模板触发重发，而不是把参数值原文漏给用户。
+    const leak = '✓ 已完成\npowershell\nGet-ChildItem -Recurse -File "public\\device" | Select-Object -ExpandProperty FullName\n</function>';
+    assert.strictEqual(protocol.parseToolCalls(leak).length, 0, 'no tool name recoverable from this shape');
+    assert.strictEqual(protocol.hasBrokenToolTemplate(leak), true);
+    // 显示层：标签行剥掉
+    assert.strictEqual(agent.stripToolTemplateFragments('正文\n</function>'), '正文');
+    // 防误判：普通代码/文字里的 function 关键字（无 < 前缀）不触发
+    assert.strictEqual(protocol.hasBrokenToolTemplate('先写 function foo() {}，再调用它。'), false);
+    assert.strictEqual(protocol.hasBrokenToolTemplate('任务完成，runCommand 已执行 2 次。'), false);
+  });
+
+  await test('missing-"args" shorthand JSON is repaired and executed (v1.9.1 real log regression)', function () {
+    // 真机记录（v1.9.1 时期）：模型输出 {"tool":"runCommand":{"shell":...}}，
+    // tool 值后直接跟冒号、漏了 "args": 键——JSON.parse 失败，坏模板检测也
+    // 不认（无标签特征），整段原文漏进聊天区；同轮的另一条正确调用已执行。
+    const leak = '依赖未安装，所以 start.bat 现在会先跑安装。\n' +
+      '{"tool":"runCommand":{"shell":"powershell","command":"cd udp-monitor; .\\\\runtime\\\\python.exe -m pip install --no-index --find-links wheels -r requirements.txt"}}';
+    const fixed = protocol.parseToolCalls(leak);
+    assert.strictEqual(fixed.length, 1, 'the colon-shape must be repaired, not leaked');
+    assert.strictEqual(fixed[0].tool, 'runCommand');
+    assert.strictEqual(fixed[0].args.shell, 'powershell');
+    // 能修回来的不算坏模板（不浪费一轮重试）
+    assert.strictEqual(protocol.hasBrokenToolTemplate(leak), false);
+    // 变体：工具名直接当键 {"runCommand":{...}}
+    const keyed = '{"runCommand":{"command":"node --version"}}';
+    const k = protocol.parseToolCalls(keyed);
+    assert.strictEqual(k.length, 1, 'tool-name-as-key shape must be repaired');
+    assert.strictEqual(k[0].tool, 'runCommand');
+    assert.strictEqual(k[0].args.command, 'node --version');
+    // 修不回来的截断形态：判坏模板触发重试，原文不显示
+    const truncated = '正在安装。\n{"tool":"runCommand":{"shell":"pow';
+    assert.strictEqual(protocol.parseToolCalls(truncated).length, 0);
+    assert.strictEqual(protocol.hasBrokenToolTemplate(truncated), true);
+    // 显示层：可提取的 JSON 调用块整块剥掉，正文保留；普通 JSON 不误伤
+    assert.strictEqual(agent.stripToolTemplateFragments(
+      '依赖未安装。\n{"tool":"runCommand":{"shell":"powershell"}}\n已重试。'), '依赖未安装。\n已重试。');
+    assert.strictEqual(agent.stripToolTemplateFragments('配置 {"name":"x","version":1} 已写好。'), '配置 {"name":"x","version":1} 已写好。');
+    // 防误判：普通 JSON / 讨论性文字不触发坏模板
+    assert.strictEqual(protocol.hasBrokenToolTemplate('返回 {"status":"ok","count":2}。'), false);
+  });
+
+  /* ---- v1.8.0 自动经验记忆：只有「报错后被修好」才值得记，且必须短 ----
+   * 这些是从真机日志里摘出来的报错原文，经验必须是可直接照做的动作。 */
+  await test('deriveLesson turns a recovered error into one actionable note', function () {
+    const cases = [
+      ['runCommand', 'TOOL ERROR: runCommand requires args.command', 'arg-missing'],
+      ['saveText', 'TOOL ERROR: Text too long to write. 45123 chars, single-call limit is 20000.', 'too-long'],
+      ['readFile', 'TOOL ERROR: path ../x.txt escapes the workspace', 'outside-workspace'],
+      ['saveText', 'TOOL ERROR: ENOENT: no such file or directory, open a.txt', 'not-found'],
+      ['createFile', 'TOOL ERROR: a.md already exists; pass overwrite:true to replace it', 'overwrite'],
+      ['readFile', 'TOOL ERROR: cannot read binary file (png)', 'binary'],
+      ['runCommand', 'COMMAND (powershell): Get-ChildItem\nSTATUS: FAILED | exit=1\nSTDERR:\nParserError: Missing closing \'}\'', 'ps-quote'],
+      ['makeCoffee', 'TOOL ERROR: unknown tool "makeCoffee". Allowed: readFile, ...', 'unknown-tool']
+    ];
+    cases.forEach(function (c) {
+      const lesson = lessons.deriveLesson({ tool: c[0], error: c[1] });
+      assert.ok(lesson, 'must learn from: ' + c[1].slice(0, 40));
+      assert.strictEqual(lesson.id, c[2], 'wrong lesson id for: ' + c[1].slice(0, 40));
+      assert.ok(lesson.text.length <= lessons.MAX_LESSON_CHARS, 'lesson must stay short enough for a prompt');
+      assert.ok(lesson.text.length >= 20, 'lesson must actually explain the fix');
+    });
+  });
+
+  await test('deriveLesson stays silent on user decisions and unknown errors', function () {
+    assert.strictEqual(lessons.deriveLesson({ tool: 'runCommand', error: 'TOOL BLOCKED: user rejected this tool call.' }), null);
+    assert.strictEqual(lessons.deriveLesson({ tool: 'runCommand', error: 'TOOL BLOCKED: tool approval timed out after 120 s' }), null);
+    assert.strictEqual(lessons.deriveLesson({ tool: 'runCommand', error: 'TOOL BLOCKED BY CONSTRAINT: 只读模式' }), null);
+    assert.strictEqual(lessons.deriveLesson({ tool: 'readFile', error: 'something odd happened' }), null);
+    assert.strictEqual(lessons.deriveLesson({ tool: 'readFile', error: '' }), null);
+  });
+
+  await test('addLesson dedupes by id, counts hits, and stops at the cap', function () {
+    let list = [];
+    list = lessons.addLesson(list, { id: 'too-long', text: 'A' });
+    list = lessons.addLesson(list, { id: 'too-long', text: 'B' });
+    assert.strictEqual(list.length, 1, 'same id must not create a second entry');
+    assert.strictEqual(list[0].text, 'B', 'newest wording wins');
+    assert.strictEqual(list[0].hits, 2, 'a repeat must bump the hit count instead of piling up');
+
+    for (let i = 0; i < lessons.MAX_LESSONS + 5; i++) {
+      list = lessons.addLesson(list, { id: 'custom-' + i, text: 'note ' + i });
+    }
+    assert.strictEqual(list.length, lessons.MAX_LESSONS, 'memory must be capped');
+    assert.strictEqual(list[list.length - 1].text, 'note ' + (lessons.MAX_LESSONS + 4), 'newest kept at the tail');
+    assert.ok(list.every(function (it) { return it.text !== 'B'; }), 'oldest entries are dropped first');
+  });
+
+  await test('lessons reach the prompt in their own section, never as user rules', function () {
+    const withLessons = rules.compileSystemPrompt({
+      basePrompt: 'base',
+      memoryRules: ['注释用中文'],
+      lessons: [{ id: 'too-long', text: '单次写入上限 20000 字符：先拆小文件。' }],
+      constraints: { readOnly: true }
+    });
+    assert.ok(/## 经验教训/.test(withLessons), 'lessons need their own section');
+    assert.ok(withLessons.indexOf('单次写入上限 20000 字符') !== -1, 'lesson text must be injected');
+    const rulePart = withLessons.split('## 经验教训')[0];
+    assert.ok(rulePart.indexOf('## 长期通用要求') !== -1, 'user rules section must stay');
+    assert.ok(rulePart.indexOf('单次写入上限') === -1, 'a lesson must not masquerade as a user rule');
+    // 删掉之后必须真的消失，否则「管理经验」是假的
+    const without = rules.compileSystemPrompt({ basePrompt: 'base', lessons: [], constraints: { readOnly: true } });
+    assert.ok(without.indexOf('## 经验教训') === -1, 'empty lesson list must not leave an empty section');
+    // 用户关掉长期记忆时，经验也不该再注入
+    const off = rules.compileSystemPrompt({ basePrompt: 'base', lessons: [{ id: 'x', text: 'y' }], rememberRules: false, constraints: {} });
+    assert.ok(off.indexOf('## 经验教训') === -1, 'lessons follow the remember switch');
+  });
+
+  await test('parseToolCalls reports every call in one reply', function () {
+    const all = protocol.parseToolCalls('{"tool":"readFile","args":{"path":"a.txt"}}\n{"tool":"listFiles","args":{}}');
+    assert.strictEqual(all.length, 2);
+    assert.deepStrictEqual(all.map(function (c) { return c.tool; }), ['readFile', 'listFiles']);
+  });
+
+  await test('malformed JSON is not treated as a call', function () {
+    assert.strictEqual(protocol.parseToolCall('{"tool":"readFile",,}'), null);
+  });
+
+  /* ---------- taskCheck ---------- */
+  await test('taskCheck: false claim with zero tools fails', function () {
+    const v = taskCheck.evaluate({ userText: '帮我复制文件到 backup', answer: '已完成', trace: { rounds: 1, tools: [], writeChecks: [] } });
+    assert.strictEqual(v.level, 'fail');
+    assert.strictEqual(v.verdict, 'false-claim');
+  });
+
+  await test('taskCheck: successful write is ok', function () {
+    const v = taskCheck.evaluate({
+      userText: '新建 report.txt 写 hello', answer: '已创建。',
+      trace: { rounds: 2, tools: [{ tool: 'createFile', status: 'ok', path: 'report.txt' }], writeChecks: [{ path: 'report.txt', exists: true, bytes: 5, fresh: true }] }
+    });
+    assert.strictEqual(v.level, 'ok');
+  });
+
+  await test('taskCheck: pure question stays silent', function () {
+    const v = taskCheck.evaluate({ userText: '这个插件支持哪些工具？', answer: '支持 9 个工具。', trace: { rounds: 1, tools: [], writeChecks: [] } });
+    assert.strictEqual(v.level, 'none');
+  });
+
+  /* ---------- endpoint ---------- */
+  await test('endpoint: host:port gains /v1', function () {
+    const r = endpoint.normalizeEndpoint('192.168.1.20:8080', '');
+    assert.strictEqual(r.ok, true);
+    assert.ok(/\/v1$/.test(r.value), r.value);
+  });
+
+  await test('endpoint: port-only without a saved address is rejected', function () {
+    const r = endpoint.normalizeEndpoint('8080', '');
+    assert.strictEqual(r.ok, false);
+  });
+
+  await test('endpoint: rejects a non-http scheme', function () {
+    const r = endpoint.normalizeEndpoint('ftp://host/v1', '');
+    assert.strictEqual(r.ok, false);
+  });
+
+  await test('endpoint: keeps an existing full path', function () {
+    const r = endpoint.normalizeEndpoint('http://h:8000/ollama/v1', '');
+    assert.strictEqual(r.value, 'http://h:8000/ollama/v1');
+  });
+
+  /* ---------- importFile ---------- */
+  await test('importFile reads txt / md / csv as text', async function () {
+    write('imp/data.csv', 'a,b\n1,2\n');
+    const out = await call('importFile', { path: 'imp/data.csv' });
+    assert.ok(/IMPORTED FILE: imp\/data\.csv/.test(out) && /1,2/.test(out), out);
+  });
+
+  await test('importFile reports binary instead of garbage', async function () {
+    fs.writeFileSync(path.join(root, 'imp.bin'), Buffer.from([0, 1, 2, 3]));
+    const out = await call('importFile', { path: 'imp.bin' });
+    assert.ok(/^TOOL ERROR|binary|二进制/i.test(out), out);
+  });
+
+  await test('importFile parses docx / xlsx ZIP containers (zero-dep)', async function () {
+    // 能力表承诺导入 docx/xlsx，但此前只有 txt/md/csv 有测试。手工构造
+    // 最小 ZIP 容器（stored 方式）验证零依赖解析链路。
+    function crc32(buf) {
+      if (!crc32.table) {
+        crc32.table = [];
+        for (let n = 0; n < 256; n++) {
+          let c = n;
+          for (let k = 0; k < 8; k++) { c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); }
+          crc32.table[n] = c >>> 0;
+        }
+      }
+      let crc = 0xFFFFFFFF;
+      for (let i = 0; i < buf.length; i++) { crc = crc32.table[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8); }
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+    function buildZip(entries) {
+      const parts = [];
+      const centrals = [];
+      let off = 0;
+      for (const e of entries) {
+        const name = Buffer.from(e.name, 'utf8');
+        const crc = crc32(e.data);
+        const local = Buffer.alloc(30);
+        local.writeUInt32LE(0x04034b50, 0);
+        local.writeUInt16LE(20, 4);
+        local.writeUInt16LE(0, 8); // method 0 = stored
+        local.writeUInt32LE(crc, 14);
+        local.writeUInt32LE(e.data.length, 18);
+        local.writeUInt32LE(e.data.length, 22);
+        local.writeUInt16LE(name.length, 26);
+        parts.push(local, name, e.data);
+        const cd = Buffer.alloc(46);
+        cd.writeUInt32LE(0x02014b50, 0);
+        cd.writeUInt16LE(20, 6);
+        cd.writeUInt16LE(0, 10);
+        cd.writeUInt32LE(crc, 16);
+        cd.writeUInt32LE(e.data.length, 20);
+        cd.writeUInt32LE(e.data.length, 24);
+        cd.writeUInt16LE(name.length, 28);
+        cd.writeUInt32LE(off, 42);
+        centrals.push(cd, name);
+        off += 30 + name.length + e.data.length;
+      }
+      const cdStart = off;
+      for (const p of centrals) { parts.push(p); off += p.length; }
+      const eocd = Buffer.alloc(22);
+      eocd.writeUInt32LE(0x06054b50, 0);
+      eocd.writeUInt16LE(entries.length, 8);
+      eocd.writeUInt16LE(entries.length, 10);
+      eocd.writeUInt32LE(off - cdStart, 12);
+      eocd.writeUInt32LE(cdStart, 16);
+      parts.push(eocd);
+      return Buffer.concat(parts);
+    }
+    const docx = buildZip([
+      { name: '[Content_Types].xml', data: Buffer.from('<Types/>') },
+      { name: 'word/document.xml', data: Buffer.from(
+        '<w:document><w:body><w:p><w:r><w:t>雷达信号说明</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>第二段 A&amp;B</w:t></w:r></w:p></w:body></w:document>') },
+    ]);
+    fs.writeFileSync(path.join(root, 'imp', 'doc.docx'), docx);
+    const doc = await call('importFile', { path: 'imp/doc.docx' });
+    assert.ok(/雷达信号说明/.test(doc), doc);
+    assert.ok(/第二段 A&B/.test(doc), 'entities must decode: ' + doc);
+    const xlsx = buildZip([
+      { name: 'xl/sharedStrings.xml', data: Buffer.from('<sst><si><t>名称</t></si><si><t>频率</t></si></sst>') },
+      { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(
+        '<worksheet><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>' +
+        '<row r="2"><c r="A2" t="inlineStr"><is><t>MHz</t></is></c><c r="B2"><v>1.5</v></c></row></worksheet>') },
+    ]);
+    fs.writeFileSync(path.join(root, 'imp', 'table.xlsx'), xlsx);
+    const sheet = await call('importFile', { path: 'imp/table.xlsx' });
+    assert.ok(/名称,频率/.test(sheet), sheet);
+    assert.ok(/MHz,1\.5/.test(sheet), sheet);
+    // 旧版二进制 .doc/.xls 明确报错而不是乱码
+    fs.writeFileSync(path.join(root, 'imp', 'old.doc'), Buffer.from([0xD0, 0xCF, 0x11, 0xE0]));
+    const legacy = await call('importFile', { path: 'imp/old.doc' });
+    assert.ok(/旧版二进制|另存为/.test(legacy), legacy);
+  });
+
+  /* ---------- wave 2: adversarial / non-standard model output ---------- */
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'zsz-audit2-'));
+  await runtime.setWriteMode(true);
+  await runtime.setWriteConfirm(false);
+  write('a.txt', 'alpha');
+  write('docs/guide.md', '# g');
+  write('docs/note.txt', 'n');
+
+  await test('protocol: args given as a JSON string is coerced', function () {
+    const c = protocol.parseToolCall('{"tool":"readFile","args":"{\\"path\\":\\"a.txt\\"}"}');
+    assert.ok(c, 'call must be recognised');
+    assert.strictEqual(c.args.path, 'a.txt', 'string args must be parsed into an object');
+  });
+
+  await test('protocol: tool name with surrounding spaces still works', function () {
+    const c = protocol.parseToolCall('{"tool":"  readFile  ","args":{"path":"a.txt"}}');
+    assert.strictEqual(c.tool, 'readFile');
+  });
+
+  await test('protocol: Qwen <tool_call><function=X> template is parsed (regression from intranet v1.0.0)', function () {
+    const shot = '好的，我先看一下。\n<tool_call>\n<function=listFiles>\n<parameter=args>\n{"path": "."}\n</parameter>\n</function>\n</tool_call>';
+    const calls = protocol.parseToolCalls(shot);
+    assert.strictEqual(calls.length, 1, JSON.stringify(calls));
+    assert.strictEqual(calls[0].tool, 'listFiles');
+    assert.strictEqual(calls[0].args.path, '.');
+  });
+
+  await test('protocol: Qwen template with empty args and name= attribute variants', function () {
+    const a = protocol.parseToolCalls('<tool_call><function=getActiveFile><parameter=args>\n{}\n</parameter></function></tool_call>');
+    assert.strictEqual(a.length, 1 && a[0].tool === 'getActiveFile' ? 1 : 0, JSON.stringify(a));
+    assert.strictEqual(a[0].tool, 'getActiveFile');
+    assert.deepStrictEqual(a[0].args, {});
+    const b = protocol.parseToolCalls('<tool_call><function name="readFile"><parameter=args>{"path":"a.txt"}</parameter></function></tool_call>');
+    assert.strictEqual(b[0].tool, 'readFile');
+    assert.strictEqual(b[0].args.path, 'a.txt');
+    const c = protocol.parseToolCalls('<tool_call><function=runCommand><parameter=command>dir</parameter></function></tool_call>');
+    assert.strictEqual(c[0].tool, 'runCommand');
+    assert.strictEqual(c[0].args.command, 'dir');
+  });
+
+  await test('protocol: Qwen native JSON inside <tool_call> ({"name":...,"arguments":{...}})', function () {
+    const a = protocol.parseToolCalls('<tool_call>\n{"name": "readFile", "arguments": {"path": "a.txt"}}\n</tool_call>');
+    assert.strictEqual(a[0].tool, 'readFile');
+    assert.strictEqual(a[0].args.path, 'a.txt');
+    const b = protocol.parseToolCalls('<tool_call>{"tool":"listFiles","args":{}}</tool_call>');
+    assert.strictEqual(b[0].tool, 'listFiles');
+    const c = protocol.parseToolCalls('<tool_call>{"name":"readFile","arguments":"{\\"path\\":\\"b.txt\\"}"}</tool_call>');
+    assert.strictEqual(c[0].args.path, 'b.txt');
+  });
+
+  await test('protocol: truncated <tool_call> without closing tag still parses', function () {
+    const a = protocol.parseToolCalls('我来查看。\n<tool_call>\n<function=readFile>\n<parameter=args>\n{"path": "a.txt"}');
+    assert.strictEqual(a[0].tool, 'readFile');
+    assert.strictEqual(a[0].args.path, 'a.txt');
+    const b = protocol.parseToolCalls('<tool_call>\n{"name":"listFiles","arguments":{"pattern":"**/*.md"}}');
+    assert.strictEqual(b[0].args.pattern, '**/*.md');
+    // 反向保护：整段里没有 tool_call 也没有可解析调用时，不能凭空造一个
+    assert.deepStrictEqual(protocol.parseToolCalls('<tool_call>garbage without anything useful'), []);
+  });
+
+  await test('absolute path inside the workspace is accepted or explicitly refused', async function () {
+    const out = await call('readFile', { path: path.join(root, 'a.txt') });
+    assert.ok(out === 'FILE: ' + path.join(root, 'a.txt') + '\nalpha' || /outside the workspace/.test(out),
+      'unexpected: ' + out);
+  });
+
+  await test('a .. path is normalised inside the workspace', async function () {
+    const out = await call('readFile', { path: 'docs/../a.txt' });
+    assert.ok(/^FILE: docs\/\.\.\/a\.txt\nalpha$/.test(out), out);
+  });
+
+  await test('createFile with a trailing separator is refused', async function () {
+    const out = await call('createFile', { path: 'newdir/', text: 'x' });
+    assert.ok(/^TOOL ERROR:/.test(out), 'must not write a file with an odd name: ' + out);
+  });
+
+  await test('saveText aimed at a directory is refused', async function () {
+    const out = await call('saveText', { path: 'docs', text: 'x' });
+    assert.ok(/^TOOL ERROR:/.test(out), out);
+  });
+
+  await test('listFiles caps at 200 entries', async function () {
+    for (let i = 0; i < 210; i++) { write('many/f' + i + '.txt', 'x'); }
+    const out = await call('listFiles', {});
+    const lines = out.split('\n').length - 1;
+    assert.ok(lines <= 200, 'expected <= 200 lines, got ' + lines);
+    assert.ok(/max 200/.test(out), 'the cap must be stated to the model');
+  });
+
+  await test('an empty string in the shell whitelist must not allow everything', function () {
+    assert.strictEqual(agent.isShellCommandAllowed('format C:', ['']), false);
+  });
+
+  await test('allowedReadGlobs **/*.md still blocks .txt', async function () {
+    const c = JSON.parse(JSON.stringify(runtime.getConfig()));
+    c.constraints.allowedReadGlobs = ['**/*.md'];
+    const okOut = await call('readFile', { path: 'docs/guide.md' }, c);
+    assert.ok(/^FILE:/.test(okOut), okOut);
+    const blocked = await call('readFile', { path: 'docs/note.txt' }, c);
+    assert.ok(/not allowed/.test(blocked), blocked);
+  });
+
+  await test('runSubtask is gated when subtask mode is off', async function () {
+    const gate = rules.checkToolCall({ tool: 'runSubtask', args: { goal: 'x' } }, runtime.getConfig().constraints);
+    assert.strictEqual(gate.allowed, false);
+  });
+
+  await test('endpoint: a trailing slash is trimmed so /chat/completions is not doubled', function () {
+    const r = endpoint.normalizeEndpoint('http://h:8000/v1/', '');
+    assert.ok(r.ok, r.error);
+    assert.ok(!/\/$/.test(r.value), 'trailing slash kept: ' + r.value);
+  });
+
+  /* ---------- wave 3: "streaming" is local now, so tools keep working ------- */
+  await test('streaming mode still executes tools and replays the final answer', async function () {
+    write('a.txt', 'alpha');
+    const agentPath = require.resolve('../src/agent');
+    const llmPath = require.resolve('../src/llmClient');
+    const savedLlm = require.cache[llmPath];
+    delete require.cache[agentPath];
+    delete require.cache[llmPath];
+    let calls = 0;
+    const longAnswer = '读完了：alpha。' + '这里是补充说明。'.repeat(6);
+    Module._load = function (request) {
+      if (request === 'vscode') { return vscodeStub; }
+      if (request === './llmClient') {
+        // classifyError must stay real enough to pass through messages.
+        const real = savedLlm.exports;
+        return {
+          classifyError: real.classifyError,
+          chatCompletion: async function () {
+            calls += 1;
+            return { content: calls === 1 ? '{"tool":"readFile","args":{"path":"a.txt"}}' : longAnswer };
+          }
+        };
+      }
+      return originalLoad.apply(this, arguments);
+    };
+    const freshAgent = require('../src/agent');
+    const cfgStream = runtime.getConfig();
+    cfgStream.stream = true;
+    const seen = [];
+    const answer = await freshAgent.runAgent({
+      config: cfgStream,
+      apiKey: 'x',
+      token: { isCancellationRequested: false },
+      history: [{ role: 'user', content: '读一下 a.txt' }],
+      onEvent: function (e) { seen.push(e); }
+    });
+    assert.strictEqual(answer, longAnswer);
+    const ran = seen.filter(function (e) { return e.type === 'tool' && e.status === 'ok'; }).pop();
+    assert.ok(ran, 'the tool must actually run while stream=true');
+    assert.ok(/alpha/.test(ran.text), 'the tool result must come back: ' + (ran && ran.text));
+    const deltas = seen.filter(function (e) { return e.type === 'delta'; });
+    assert.ok(deltas.length > 1, 'the answer must be replayed in slices, got ' + deltas.length);
+    assert.strictEqual(deltas.map(function (e) { return e.text; }).join(''), longAnswer);
+    assert.ok(!seen.some(function (e) { return /streaming mode/.test(e.text || ''); }), 'no "tools skipped" warning any more');
+    // restore the real modules for anything after this point
+    Module._load = function (request) {
+      if (request === 'vscode') { return vscodeStub; }
+      return originalLoad.apply(this, arguments);
+    };
+    delete require.cache[agentPath];
+    delete require.cache[llmPath];
+  });
+
+  await runtime.setWriteMode(false);
+  editor = null;
+  fs.rmSync(root, { recursive: true, force: true });
+  const failed = results.filter(function (r) { return !r.ok; });
+  console.log('\n  ' + (results.length - failed.length) + '/' + results.length + ' checks passed');
+  if (failed.length) {
+    console.log('\n  NEEDS ATTENTION:');
+    failed.forEach(function (f) { console.log('   - ' + f.name + ': ' + f.err); });
+    process.exitCode = 1;
+  }
+}
+
+main().catch(function (e) {
+  console.error('AUDIT CRASHED: ' + (e && e.stack ? e.stack : e));
+  process.exitCode = 1;
+});

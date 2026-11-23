@@ -1,0 +1,11 @@
+.vscode/**
+.vscode-test/**
+scripts/**
+.gitignore
+**/*.map
+**/.DS_Store
+node_modules/**
+*.vsix
+ui-preview.html
+icon-preview.png
+scripts/_preview/**
