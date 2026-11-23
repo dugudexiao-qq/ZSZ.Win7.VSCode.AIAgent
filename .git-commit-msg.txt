@@ -1,0 +1,15 @@
+v1.11.0: Git Bash support, shell-syntax prompt rules, mismatch hints, AGENTS.md
+
+- runCommand now offers shell:"bash" (Git Bash; Git for Windows 2.42.x is the
+  last Win7-compatible line). MSYS path conversion disabled for children.
+- New setting win7Agent.preferShell (auto/powershell/cmd/bash); auto picks
+  bash when bash.exe is detected, else the stock PS 5.1.
+- System prompt injects per-shell syntax rules (IMPORTANT/NEVER style) for
+  every available shell - the model is told its dialect explicitly.
+- Failed commands are scanned for wrong-dialect signatures ($env: in cmd,
+  PS cmdlets in cmd, && in PS 5.1, export in PS, dir/%VAR% in bash) and the
+  result carries a concrete HINT for the next retry.
+- Workspace AGENTS.md (2026 de-facto standard) is injected into the system
+  prompt, capped at 200 lines / 8000 chars, below the hard constraints.
+- README fully rewritten: up-to-date, concise, professional.
+- Tests: selftest 52, audit 96, mention-ui 17, smoke host suite

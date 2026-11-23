@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * Controlled PowerShell / CMD execution for Windows 7 (Node 16).
+ * Controlled PowerShell / CMD / Git Bash execution for Windows 7 (Node 16).
  *
  * Why it is built this way (the "stuck command" problem):
  *  - NEVER build a shell command line by concatenating user text. spawn() gets
@@ -59,7 +59,7 @@ function fromEncodedCommand(encoded) {
 /* Pure function: safe to unit-test without spawning anything. */
 function buildSpawnSpec(params) {
   const p = params || {};
-  const shell = p.shell === 'cmd' ? 'cmd' : 'powershell';
+  const shell = p.shell === 'cmd' ? 'cmd' : (p.shell === 'bash' ? 'bash' : 'powershell');
   const command = String(p.command === undefined || p.command === null ? '' : p.command);
   if (!command.trim()) { throw new Error('command 不能为空'); }
   if (shell === 'powershell') {
@@ -76,6 +76,21 @@ function buildSpawnSpec(params) {
       shell: false,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe']
+    };
+  }
+  if (shell === 'bash') {
+    // Git Bash (Git for Windows 2.42.x = last Win7-compatible line).
+    // bash emits UTF-8 natively, so no prelude/chcp dance is needed.
+    // MSYS_NO_PATHCONV / MSYS2_ARG_CONV_EXCL stop the MSYS runtime from
+    // rewriting arguments that merely LOOK like POSIX paths (/v1, /c ...)
+    // into Windows paths — that silent rewrite corrupts command strings.
+    return {
+      file: p.bashPath || 'bash.exe',
+      args: ['-c', command],
+      shell: false,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      envExtra: { MSYS_NO_PATHCONV: '1', MSYS2_ARG_CONV_EXCL: '*' }
     };
   }
   return {
@@ -129,12 +144,16 @@ function runCommand(params) {
   return new Promise(function (resolve) {
     let child;
     try {
-      child = cp.spawn(spec.file, spec.args, {
+      const spawnOpts = {
         cwd: p.cwd || undefined,
         shell: false,
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe']
-      });
+      };
+      if (spec.envExtra) {
+        spawnOpts.env = Object.assign({}, process.env, spec.envExtra);
+      }
+      child = cp.spawn(spec.file, spec.args, spawnOpts);
     } catch (e) {
       resolve({ ok: false, error: e.message, stdout: '', stderr: '', exitCode: null, durationMs: Date.now() - started });
       return;

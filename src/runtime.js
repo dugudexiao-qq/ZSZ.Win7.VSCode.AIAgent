@@ -106,6 +106,7 @@ function getConfig() {
   return {
     baseUrl: baseUrl,
     model: String(cfgValue(c, 'model') || ''),
+    preferShell: String(cfgValue(c, 'preferShell') || 'auto'),
     systemPrompt: String(cfgValue(c, 'systemPrompt') || ''),
     maxToolRounds: Number(cfgValue(c, 'maxToolRounds') || 0),
     maxHistoryMessages: Number(cfgValue(c, 'maxHistoryMessages') || 100),

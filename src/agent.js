@@ -18,6 +18,8 @@ const pathUtils = require('./pathUtils');
 const rules = require('./rules');
 const lessons = require('./lessons');
 const fileImport = require('./fileImport');
+const shellEnv = require('./shellEnv');
+const agentsMdLib = require('./agentsMd');
 const proc = require('./processRunner');
 const snapLib = require('./snapshots');
 
@@ -491,12 +493,17 @@ async function runCommandTool(args, config, ctx) {
   if (!isShellCommandAllowed(command, c.allowedShellCommands)) {
     throw new Error('Command is not in win7Agent.constraints.allowedShellCommands: ' + command.slice(0, 120));
   }
+  /* Model asked for a shell it can't have (or none at all): resolve against
+   * the user's preferShell setting and what actually exists on this machine.
+   * resolved.note (if any) is echoed back so the model learns why. */
+  const resolvedShell = shellEnv.resolveShell(config.preferShell, args.shell);
+  const shell = resolvedShell.shell;
   if (c.confirmShell) {
     const waitMs = confirmTimeoutMs(config);
-    emitAwaiting(ctx, '等待你确认（命令确认开关）：是否执行 ' + (args.shell === 'cmd' ? 'CMD' : 'PowerShell') + ' 命令？');
+    emitAwaiting(ctx, '等待你确认（命令确认开关）：是否执行 ' + shellEnv.shellLabel(shell) + ' 命令？');
     const answer = await confirmWithTimeout(
       vscode.window.showWarningMessage(
-        'ZSZ.Win7.VSCode.AIAgent wants to run a ' + (args.shell === 'cmd' ? 'CMD' : 'PowerShell') +
+        'ZSZ.Win7.VSCode.AIAgent wants to run a ' + shellEnv.shellLabel(shell) +
         ' command:\n\n' + command.slice(0, 500) + '\n\n' + proc.describeLimits(config.process),
         { modal: true },
         'Run'
@@ -511,17 +518,28 @@ async function runCommandTool(args, config, ctx) {
     if (answer !== 'Run') { throw new Error('User rejected the command.'); }
   }
   const result = await proc.runCommand({
-    shell: args.shell,
+    shell: shell,
     command: command,
     cwd: workspaceRoot() || undefined,
+    bashPath: shellEnv.bashPath() || undefined,
     limits: config.process,
     token: ctx.token
   });
   const status = result.ok ? 'OK' : (result.stalled ? 'STALLED (killed)' : result.timedOut ? 'TIMEOUT (killed)' : result.cancelled ? 'CANCELLED' : 'FAILED');
-  return 'COMMAND (' + (args.shell === 'cmd' ? 'cmd' : 'powershell') + '): ' + command.slice(0, 200) +
+  /* Wrong-dialect detector: bash syntax inside cmd, PowerShell cmdlets inside
+   * cmd, && inside PS 5.1, %VAR% inside bash ... The hint is appended right
+   * after the failure so the very next retry uses the right syntax. */
+  let mismatch = '';
+  if (!result.ok && !result.cancelled) {
+    mismatch = shellEnv.diagnoseMismatch(shell, command,
+      String(result.stderr || '') + '\n' + String(result.stdout || '') + '\n' + String(result.error || ''));
+  }
+  return 'COMMAND (' + shell + '): ' + command.slice(0, 200) +
     '\nSTATUS: ' + status + ' | exit=' + result.exitCode + ' | ' + result.durationMs + ' ms' +
+    (resolvedShell.note ? '\nNOTE: ' + resolvedShell.note : '') +
     (result.truncated ? ' | output truncated' : '') +
     (result.error ? '\nERROR: ' + result.error : '') +
+    (mismatch ? '\nHINT: 疑似 shell 语法错配——' + mismatch : '') +
     '\nSTDOUT:\n' + pathUtils.truncateMiddle(result.stdout || '(empty)', 4000) +
     '\nSTDERR:\n' + pathUtils.truncate(result.stderr || '(empty)', 1200);
 }
@@ -750,7 +768,9 @@ async function runAgent(params) {
     rememberRules: config.rememberRules,
     constraints: config.constraints,
     subtaskMode: isSubtaskMode(config),
-    workspaceDigest: digest
+    workspaceDigest: digest,
+    agentsMd: depth === 0 ? agentsMdLib.agentsMdSection(workspaceRoot()) : '',
+    shellSection: shellEnv.shellSyntaxSection(config.preferShell)
   });
   // Two windows now: message count AND a character budget. The second one is
   // what actually protects a small model's context.

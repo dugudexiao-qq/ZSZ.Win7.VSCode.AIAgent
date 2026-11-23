@@ -283,7 +283,7 @@ async function main() {
     assert.ok(!commands[id], 'change-ledger command must be unregistered: ' + id);
   });
   assert.ok(commands['win7Agent.manageLessons'], 'auto-lesson manager command must be registered');
-  assert.ok(commands['win7Agent.switchProfile'], 'model-profile switcher command must be registered (v1.10.0)');
+  assert.ok(commands['win7Agent.switchProfile'], 'model-profile switcher command must be registered (v1.11.0)');
   console.log('  PASS  activate() registered 21 commands and the webview provider');
   
 
@@ -347,7 +347,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.10.0');
+  assert.strictEqual(info.version, '1.11.0');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -386,9 +386,9 @@ async function main() {
   assert.ok(view.webview.html.indexOf('id="changesbtn"') === -1, 'change-ledger menu button must be removed');
   assert.ok(view.webview.html.indexOf('id="thoughts"') === -1,
     'the top thoughts drawer must be gone (thoughts render inline as segments since 1.9.0)');
-  assert.ok(/src="[^"]*chat\.js\?v=1\.10\.0-\d+"/.test(view.webview.html),
-    'script src must carry a build-stamp query so a same-folder upgrade cannot serve a cached old chat.js (v1.10.0)');
-  assert.ok(/chat\.css\?v=1\.10\.0-\d+/.test(view.webview.html) && /markdown\.js\?v=1\.10\.0-\d+/.test(view.webview.html),
+  assert.ok(/src="[^"]*chat\.js\?v=1\.11\.0-\d+"/.test(view.webview.html),
+    'script src must carry a build-stamp query so a same-folder upgrade cannot serve a cached old chat.js (v1.11.0)');
+  assert.ok(/chat\.css\?v=1\.11\.0-\d+/.test(view.webview.html) && /markdown\.js\?v=1\.11\.0-\d+/.test(view.webview.html),
     'css and markdown loader must carry the build-stamp query too');
   assert.ok(/"repository"[^}]*gitcode\.com\/dugudexiao\/zsz\.Win7\.AIAgent/.test(require('fs').readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')),
     'package.json must point at the public repository (marketplace shows the link)');
@@ -537,7 +537,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.10.0');
+  assert.strictEqual(state.version, '1.11.0');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');

@@ -1116,6 +1116,101 @@ async function main() {
     await runtime.setWriteMode(false);
   });
 
+  /* ---- v1.11.0: shell environment (bash option, prompt rules, mismatch hints) ---- */
+
+  await test('shellEnv: resolveShell honors explicit valid shells and falls back with a note', function () {
+    const env = require('../src/shellEnv');
+    // bash available
+    assert.strictEqual(env.resolveShell('auto', '', true).shell, 'bash', 'auto prefers bash when available');
+    assert.strictEqual(env.resolveShell('powershell', '', true).shell, 'powershell');
+    assert.strictEqual(env.resolveShell('cmd', 'bash', true).shell, 'bash', 'an explicit valid request always wins');
+    // bash unavailable
+    assert.strictEqual(env.resolveShell('auto', '', false).shell, 'powershell', 'auto degrades to powershell without bash');
+    const denied = env.resolveShell('auto', 'bash', false);
+    assert.strictEqual(denied.shell, 'powershell');
+    assert.ok(/bash\.exe/.test(denied.note), 'unavailable bash must come with an explanatory note');
+    assert.strictEqual(env.resolveShell('nonsense', '', true).shell, 'powershell', 'invalid prefer falls back to powershell');
+  });
+
+  await test('shellEnv: prompt section adapts to available shells and states the default', function () {
+    const env = require('../src/shellEnv');
+    const withBash = env.shellSyntaxSection('auto', true);
+    const withoutBash = env.shellSyntaxSection('auto', false);
+    assert.ok(/## Shell 执行环境/.test(withBash));
+    assert.ok(/bash（Git Bash）/.test(withBash), 'bash rules must appear when bash is available');
+    assert.ok(!/bash（Git Bash）/.test(withoutBash), 'bash rules must be omitted when bash is missing');
+    assert.ok(/默认用 bash/.test(withBash) && /默认用 powershell/.test(withoutBash));
+    assert.ok(/\$env:VAR/.test(withBash) && /set VAR=value/.test(withBash), 'per-shell variable syntax must be spelled out');
+    assert.ok(/PS 5.1 不支持 &&/.test(withBash), 'the && pitfall must be stated');
+  });
+
+  await test('shellEnv: diagnoseMismatch catches the common wrong-dialect signatures', function () {
+    const env = require('../src/shellEnv');
+    // PowerShell cmdlets inside cmd
+    const a = env.diagnoseMismatch('cmd', 'Get-ChildItem src', 'ERROR: Get-ChildItem is not recognized as an internal or external command');
+    assert.ok(/cmdlet/.test(a) && /powershell/.test(a), 'PS cmdlet in cmd must be diagnosed');
+    // $env: inside cmd
+    const b = env.diagnoseMismatch('cmd', 'setx PATH "$env:JAVA_HOME"', '');
+    assert.ok(/set VAR=value/.test(b), '$env: in cmd must point at set VAR=value');
+    // && inside PowerShell 5.1
+    const c = env.diagnoseMismatch('powershell', 'node build.js && npm test', "The token '&&' is not a valid statement separator in this version.");
+    assert.ok(/不支持 &&/.test(c), '&& in PS 5.1 must be diagnosed');
+    // export inside PowerShell
+    const d = env.diagnoseMismatch('powershell', 'export FOO=1', '');
+    assert.ok(/\$env:VAR="值"/.test(d), 'export in powershell must be diagnosed');
+    // cmd-isms inside bash
+    const e = env.diagnoseMismatch('bash', 'dir', 'bash: dir: command not found');
+    assert.ok(/Git Bash/.test(e) && /ls/.test(e), 'dir in bash must point at ls');
+    // %VAR% inside bash
+    const f = env.diagnoseMismatch('bash', 'echo %PATH%', '');
+    assert.ok(/\$VAR/.test(f), '%VAR% in bash must be diagnosed');
+    // a legit failure gets no spurious hint
+    assert.strictEqual(env.diagnoseMismatch('powershell', 'node --version', 'v16.20.2\nexit 1'), '', 'plain tool failure must not get a fake hint');
+  });
+
+  await test('processRunner: bash spawn spec keeps the command intact and blocks MSYS path conversion', function () {
+    const proc = require('../src/processRunner');
+    const spec = proc.buildSpawnSpec({ shell: 'bash', command: 'npm --version && ls C:/work', bashPath: 'C:/Program Files/Git/bin/bash.exe' });
+    assert.strictEqual(spec.file, 'C:/Program Files/Git/bin/bash.exe');
+    assert.deepStrictEqual(spec.args, ['-c', 'npm --version && ls C:/work'], 'the command must travel as a single argv element');
+    assert.ok(spec.envExtra && spec.envExtra.MSYS_NO_PATHCONV === '1', 'MSYS path conversion must be disabled');
+    const ps = proc.buildSpawnSpec({ shell: 'powershell', command: 'Get-Date' });
+    assert.ok(!ps.envExtra, 'powershell spec must not carry bash env overrides');
+  });
+
+  /* ---- v1.11.0: AGENTS.md injection ---- */
+
+  await test('agentsMd: reads the workspace file, caps lines and characters, wrapper pins it below constraints', function () {
+    const amd = require('../src/agentsMd');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentsmd-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'AGENTS.md'), '# 项目规则\n\n- 注释用中文\n' + Array(260).fill('- line').join('\n'), 'utf8');
+      const text = amd.readAgentsMd(dir);
+      assert.ok(/注释用中文/.test(text));
+      assert.ok(/已截断/.test(text), 'over 200 lines must be truncated');
+      const section = amd.agentsMdSection(dir);
+      assert.ok(/## 项目说明/.test(section) && /运行约束/.test(section), 'wrapper must reference the constraint priority');
+      // empty file -> no section
+      fs.writeFileSync(path.join(dir, 'AGENTS.md'), '   \n', 'utf8');
+      assert.strictEqual(amd.agentsMdSection(dir), '', 'a blank AGENTS.md must produce no section');
+      // no file -> no section
+      assert.strictEqual(amd.agentsMdSection(path.join(dir, 'missing')), '');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await test('rules: compileSystemPrompt embeds AGENTS.md and shell rules only when provided', function () {
+    const rulesLib = require('../src/rules');
+    const bare = rulesLib.compileSystemPrompt({});
+    assert.ok(!/## 项目说明/.test(bare) && !/## Shell 执行环境/.test(bare), 'no file/no param -> no section');
+    const full = rulesLib.compileSystemPrompt({
+      agentsMd: '## 项目说明（工作区根目录 AGENTS.md）\n- 注释用中文',
+      shellSection: '## Shell 执行环境\n- cmd 里 NEVER 使用 $env:'
+    });
+    assert.ok(/注释用中文/.test(full) && /NEVER 使用 \$env:/.test(full));
+  });
+
   await runtime.setWriteMode(false);
   editor = null;
   fs.rmSync(root, { recursive: true, force: true });
