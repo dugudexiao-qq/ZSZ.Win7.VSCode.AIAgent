@@ -46,7 +46,7 @@
 
 `dist/` 目录内提供打包好的离线安装包（VSIX），无需自行编译：
 
-1. 下载 [`dist/zsz-win7-vscode-aiagent-1.11.0.vsix`](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/raw/main/dist/zsz-win7-vscode-aiagent-1.11.0.vsix)（约 168 KB）
+1. 打开文件页 [dist/zsz-win7-vscode-aiagent-1.11.0.vsix](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/blob/main/dist/zsz-win7-vscode-aiagent-1.11.0.vsix)，点击页面上的「下载」按钮保存文件（约 168 KB）
 2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.0.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
