@@ -16,7 +16,7 @@
  *  - PowerShell 7.2 is the last pwsh that runs on Win7, but offline machines
  *    rarely have it; we target the stock Windows PowerShell 5.1 and teach the
  *    model its quirks (no &&, ; chaining, $env: vars) instead.
- *  - Git for Windows 2.42.x is the last release line that supports Win7;
+ *  - Git for Windows 2.46.2 is the last release that supports Win7;
  *    when its bash.exe is present we offer shell:"bash" and recommend it
  *    as the default (auto mode), because bash is the model's native tongue.
  *
@@ -57,7 +57,7 @@ function findBashPath() {
       if (lines.length) { return lines[0]; }
     }
   } catch (e) { /* where missing or blocked -> fall through */ }
-  /* 2) Standard Git for Windows install locations (2.42 = last Win7 line). */
+  /* 2) Standard Git for Windows install locations (2.46.2 = last Win7 release). */
   const bases = [];
   if (process.env.ProgramFiles) { bases.push(process.env.ProgramFiles); }
   if (process.env['ProgramFiles(x86)']) { bases.push(process.env['ProgramFiles(x86)']); }
@@ -107,7 +107,7 @@ function resolveShell(prefer, requested, bashAvailable) {
   let note = '';
   if (req) {
     note = 'shell "' + req + '" 不可用' +
-      (req === 'bash' && !bash ? '（本机未检测到 bash.exe；Git for Windows 2.42 是最后支持 Win7 的版本）' : '') +
+      (req === 'bash' && !bash ? '（本机未检测到 bash.exe；Git for Windows 2.46.2 是最后支持 Win7 的版本）' : '') +
       '，已改用 ' + def;
   }
   return { shell: def, note: note };

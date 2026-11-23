@@ -245,7 +245,7 @@
             "自动：检测到 Git Bash（bash.exe）则默认用 bash，否则用 PowerShell。推荐——模型对 bash 语法最熟练",
             "始终默认 Windows PowerShell（5.1）",
             "始终默认 CMD",
-            "始终默认 Git Bash（需本机装有 Git for Windows 2.42 或更低版本；未装时回退 PowerShell）"
+            "始终默认 Git Bash（需本机装有 Git for Windows 2.46.2 或更低版本；未装时回退 PowerShell）"
           ],
           "description": "runCommand 未指明 shell 时使用的默认 Shell。auto 会先检测本机是否有 bash.exe（Git Bash）；模型也可在每次调用里显式指定 shell 参数（powershell / cmd / bash）。系统提示词会按当前可用 shell 注入对应的语法规则。"
         },

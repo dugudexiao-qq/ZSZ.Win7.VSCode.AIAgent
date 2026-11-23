@@ -79,7 +79,7 @@ function buildSpawnSpec(params) {
     };
   }
   if (shell === 'bash') {
-    // Git Bash (Git for Windows 2.42.x = last Win7-compatible line).
+    // Git Bash (Git for Windows 2.46.2 = last Win7-compatible release).
     // bash emits UTF-8 natively, so no prelude/chcp dance is needed.
     // MSYS_NO_PATHCONV / MSYS2_ARG_CONV_EXCL stop the MSYS runtime from
     // rewriting arguments that merely LOOK like POSIX paths (/v1, /c ...)
