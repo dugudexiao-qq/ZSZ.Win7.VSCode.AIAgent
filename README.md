@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-作者：dugudexiao。扩展 ID：dugudexiao.win7-ai-agent。版本 v1.9.3。MIT 许可。
+作者：dugudexiao。扩展 ID：dugudexiao.win7-ai-agent。版本 v1.10.0。MIT 许可。
 
 源码：[https://gitcode.com/dugudexiao/zsz.Win7.AIAgent](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent) · 问题反馈：[Issues](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/issues) 或邮件 dugudexiao@sina.com
 
@@ -213,6 +213,11 @@ Win7 上该文件在 C:\Users\用户名\AppData\Roaming\Code\User\settings.json�
 - v1.9.1：webview 资源缓存穿透——脚本与样式 URL 附「版本号-构建时间戳」查询参数（如 chat.js?v=1.9.1-1763...），同名目录覆盖升级后不会再因 VS Code 1.70 的 webview 脚本缓存而看到旧界面。功能无任何变化；若升级后仍见旧界面，把所有 VS Code 窗口完全关闭再启动。
 - v1.9.2：修复模型输出的变形调用 JSON 漏进聊天区——{"tool":"runCommand":{...}}（漏 "args": 键）与 {"runCommand":{...}}（工具名当键）两种形态现在会被直接修复并执行；修不回来的截断形态归入坏模板自动要求重发，原文不再显示。
 - v1.9.3：发布准备——LICENSE 署名补全（local → dugudexiao），package.json 增补 repository/homepage/bugs（Marketplace 显示源码与反馈入口），README 增加版权与许可说明，面板菜单与「关于」弹窗显示 © 署名。
+- v1.10.0：三项新功能（借鉴 win7agent 项目的思路）——
+  1. **多模型配置（profiles）**：菜单「模型配置」可把当前「服务地址 + 模型 + key」存成命名配置，之后一键切换（例如本地小模型 ↔ 内网大模型）。配置存本机 globalState，最多 8 份。
+  2. **自动上下文压缩**：会话历史超过上限时，发送前自动把被淘汰的旧消息用当前模型压缩成一条摘要，替换进历史——长任务不再因为硬上限「忘记」开头。压缩失败会静默降级为普通裁剪，不影响对话。
+  3. **每轮快照 + 撤回**：Agent 每次真实写入文件（saveText / createFile，含子任务里的写入）前先快照原内容；回复下方出现「↩ 撤回本轮改动」按钮，一键恢复原内容/删除本轮新建文件。快照只保留最近 5 轮、存内存（重启后不可撤回），撤回是一次性的。
+  另：命令面板新增「切换模型配置 (Switch Model Profile)」。
 
 </details>
 

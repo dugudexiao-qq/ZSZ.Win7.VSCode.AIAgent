@@ -2,7 +2,7 @@
   "name": "win7-ai-agent",
   "displayName": "ZSZ.Win7.VSCode.AIAgent",
   "description": "适用于 Windows 7 + VS Code 1.70.x 的本地大模型 AI Agent。",
-  "version": "1.9.3",
+  "version": "1.10.0",
   "publisher": "dugudexiao",
   "icon": "media/icon.png",
   "author": {
@@ -48,6 +48,7 @@
     "onCommand:win7Agent.toggleSubtaskMode",
     "onCommand:win7Agent.setApiKey",
     "onCommand:win7Agent.clearApiKey",
+    "onCommand:win7Agent.switchProfile",
     "onCommand:win7Agent.askSelection",
     "onCommand:win7Agent.diagnose",
     "onCommand:win7Agent.about",
@@ -111,6 +112,11 @@
       {
         "command": "win7Agent.clearApiKey",
         "title": "清除 API Key",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.switchProfile",
+        "title": "切换模型配置 (Switch Model Profile)",
         "category": "ZSZ.Win7.VSCode.AIAgent"
       },
       {

@@ -272,7 +272,7 @@ async function main() {
   const ext = require('../extension');
   await ext.activate(context);
 
-  assert.strictEqual(Object.keys(commands).length, 20, 'all 20 commands must be registered');
+  assert.strictEqual(Object.keys(commands).length, 21, 'all 21 commands must be registered');
   assert.ok(registeredProvider, 'webview provider must be registered');
   assert.ok(commands['win7Agent.toggleWriteMode'], 'write-mode toggle must be registered');
   assert.ok(commands['win7Agent.toggleShellConfirm'], 'shell-confirmation toggle must be registered');
@@ -283,12 +283,42 @@ async function main() {
     assert.ok(!commands[id], 'change-ledger command must be unregistered: ' + id);
   });
   assert.ok(commands['win7Agent.manageLessons'], 'auto-lesson manager command must be registered');
-  console.log('  PASS  activate() registered 20 commands and the webview provider');
+  assert.ok(commands['win7Agent.switchProfile'], 'model-profile switcher command must be registered (v1.10.0)');
+  console.log('  PASS  activate() registered 21 commands and the webview provider');
+  
 
   const runtime = require('../src/runtime');
   const config = runtime.getConfig();
   assert.strictEqual(config.model, 'qwen3.8-flash-next-unsloth-ud-iq4-xs');
   assert.strictEqual(config.localEndpoint, true);
+
+  /* ---- v1.10.0: named model profiles, end to end against the stubbed host ---- */
+  {
+    const origBase = config.baseUrl;
+    const origModel = config.model;
+    const origKey = await runtime.getApiKey();
+    const added = await runtime.addProfile('smoke-local', 'http://127.0.0.1:1234/v1', 'demo-model', 'sk-smoke');
+    assert.ok(added.ok, 'addProfile must succeed: ' + (added.message || ''));
+    assert.strictEqual(runtime.getProfiles().length, 1);
+    assert.strictEqual(runtime.activeProfileName(), '', 'before applying, live settings do not match any profile');
+    await runtime.applyProfile(runtime.getProfiles()[0]);
+    const after = runtime.getConfig();
+    assert.strictEqual(after.baseUrl, 'http://127.0.0.1:1234/v1', 'applyProfile must write baseUrl into settings');
+    assert.strictEqual(after.model, 'demo-model', 'applyProfile must write model into settings');
+    assert.strictEqual(runtime.activeProfileName(), 'smoke-local', 'after applying, the profile must be detected as active');
+    const storedKey = await runtime.getApiKey();
+    assert.strictEqual(storedKey, 'sk-smoke', 'applyProfile must push the profile key into SecretStorage');
+    const del = await runtime.deleteProfile('smoke-local');
+    assert.ok(del.ok && runtime.getProfiles().length === 0, 'deleteProfile must remove the profile');
+    // restore the live endpoint so the rest of the smoke hits the mock server
+    const cfgApi = require('vscode').workspace.getConfiguration('win7Agent');
+    await cfgApi.update('baseUrl', origBase, 1);
+    await cfgApi.update('model', origModel, 1);
+    await runtime.setApiKey(origKey || '');
+    assert.strictEqual(runtime.getConfig().model, origModel, 'the original endpoint must be restored');
+    console.log('  PASS  model profiles: add / apply / detect-active / delete');
+  }
+
   assert.strictEqual(Number(defaults['win7Agent.timeoutMs'].default), 1000000);
   assert.strictEqual(config.constraints.readOnly, true);
   assert.strictEqual(config.constraints.allowShell, true, 'shell must be ON by default');
@@ -317,7 +347,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.9.3');
+  assert.strictEqual(info.version, '1.10.0');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -356,14 +386,30 @@ async function main() {
   assert.ok(view.webview.html.indexOf('id="changesbtn"') === -1, 'change-ledger menu button must be removed');
   assert.ok(view.webview.html.indexOf('id="thoughts"') === -1,
     'the top thoughts drawer must be gone (thoughts render inline as segments since 1.9.0)');
-  assert.ok(/src="[^"]*chat\.js\?v=1\.9\.3-\d+"/.test(view.webview.html),
-    'script src must carry a build-stamp query so a same-folder upgrade cannot serve a cached old chat.js (v1.9.2)');
-  assert.ok(/chat\.css\?v=1\.9\.3-\d+/.test(view.webview.html) && /markdown\.js\?v=1\.9\.3-\d+/.test(view.webview.html),
+  assert.ok(/src="[^"]*chat\.js\?v=1\.10\.0-\d+"/.test(view.webview.html),
+    'script src must carry a build-stamp query so a same-folder upgrade cannot serve a cached old chat.js (v1.10.0)');
+  assert.ok(/chat\.css\?v=1\.10\.0-\d+/.test(view.webview.html) && /markdown\.js\?v=1\.10\.0-\d+/.test(view.webview.html),
     'css and markdown loader must carry the build-stamp query too');
   assert.ok(/"repository"[^}]*gitcode\.com\/dugudexiao\/zsz\.Win7\.AIAgent/.test(require('fs').readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')),
     'package.json must point at the public repository (marketplace shows the link)');
   assert.ok(view.webview.html.indexOf('© ' ) !== -1 && view.webview.html.indexOf('MIT') !== -1,
     'the panel menu must carry the (c) author / MIT copyright line (v1.9.3)');
+  /* ---- v1.10.0 UI wiring: profiles menu entry, snapshot row, compaction hook ---- */
+  assert.ok(view.webview.html.indexOf('id="profiles"') !== -1,
+    'the menu must expose the model-profile switcher button');
+  {
+    const chatJs = require('fs').readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
+    assert.ok(chatJs.indexOf("case 'snapshot'") !== -1, 'chat.js must render the snapshot revert row');
+    assert.ok(chatJs.indexOf('.snap-undo') !== -1 && chatJs.indexOf("type: 'revertSnapshot'") !== -1,
+      'chat.js must delegate clicks on the snapshot undo button back to the host');
+    assert.ok(chatJs.indexOf("type: 'profiles'") !== -1, 'chat.js must wire the profiles menu button');
+    const cvSrc = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
+    assert.ok(cvSrc.indexOf('compactIfNeeded') !== -1, 'the host must attempt context compaction before each run');
+    assert.ok(cvSrc.indexOf('_revertSnapshot') !== -1, 'the host must handle revertSnapshot messages');
+    assert.ok(cvSrc.indexOf('snapshots: snap') !== -1, 'the host must share a snapshot array with runAgent');
+    const agSrc = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'agent.js'), 'utf8');
+    assert.ok(agSrc.indexOf('captureBefore') !== -1, 'write tools must capture a pre-write snapshot');
+  }
   const segChatJs = require('fs').readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
   assert.ok(segChatJs.indexOf('addThoughtSeg') !== -1 && segChatJs.indexOf('addToolCallSeg') !== -1,
     'thoughts and tool calls must render as interleaved inline segments');
@@ -491,7 +537,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.9.3');
+  assert.strictEqual(state.version, '1.10.0');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');

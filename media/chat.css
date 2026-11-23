@@ -613,6 +613,37 @@ button.achip-x:hover {
   color: var(--vscode-editorInfo-foreground, var(--vscode-foreground));
 }
 
+/* 撤回本轮改动（v1.10）：快照可回退时的单行条目 */
+.msg.snapshot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--vscode-editorInfo-foreground, var(--vscode-foreground));
+}
+.msg.snapshot .snap-undo {
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 1px solid var(--vscode-panel-border, transparent);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.msg.snapshot .snap-undo:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.25));
+  border-color: var(--vscode-focusBorder, var(--vscode-panel-border, transparent));
+}
+.msg.snapshot .snap-undo:disabled {
+  opacity: 0.5;
+}
+.msg.snapshot .snap-files {
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .row {
   display: flex;
   gap: 6px;

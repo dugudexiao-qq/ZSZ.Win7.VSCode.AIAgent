@@ -19,6 +19,7 @@ const rules = require('./rules');
 const lessons = require('./lessons');
 const fileImport = require('./fileImport');
 const proc = require('./processRunner');
+const snapLib = require('./snapshots');
 
 const taskCheck = require('./taskCheck');
 
@@ -414,6 +415,11 @@ async function saveTextTool(args, config, ctx) {
     'ZSZ.Win7.VSCode.AIAgent wants to write ' + text.length + ' characters to ' + loc.rel + '.',
     'Write');
   if (!approved) { throw new Error('User rejected the write.'); }
+  /* 快照在「已批准、未写入」之间采集：拒绝的写入不留无意义快照。 */
+  if (ctx && Array.isArray(ctx.snapshots)) {
+    const rec = snapLib.captureBefore(loc.fullPath, loc.rel);
+    if (rec) { snapLib.record(ctx.snapshots, rec); }
+  }
   fs.writeFileSync(loc.fullPath, text, 'utf8');
   return 'Wrote ' + text.length + ' characters to ' + loc.rel + '.';
 }
@@ -449,6 +455,10 @@ async function createFileTool(args, config, ctx) {
     ' with ' + text.length + ' characters (parent folders will be created if needed).',
     'Create');
   if (!approved) { throw new Error('User rejected file creation.'); }
+  if (ctx && Array.isArray(ctx.snapshots)) {
+    const rec = snapLib.captureBefore(loc.fullPath, loc.rel);
+    if (rec) { snapLib.record(ctx.snapshots, rec); }
+  }
   fs.mkdirSync(path.dirname(loc.fullPath), { recursive: true });
   fs.writeFileSync(loc.fullPath, text, 'utf8');
   return (exists ? 'Overwrote' : 'Created') + ' file ' + loc.rel + ' (' + text.length + ' characters).';
@@ -564,6 +574,8 @@ async function runSubtaskTool(args, config, ctx) {
       rules: ctx.rules || {},
       depth: depth + 1,
       taskState: state,
+      // 子代理写的文件也要能撤回：共用父轮的快照列表。
+      snapshots: Array.isArray(ctx.snapshots) ? ctx.snapshots : [],
       // A lesson learned inside a subtask is still a lesson: share the sink.
       onLesson: typeof ctx.onLesson === 'function' ? ctx.onLesson : null,
       autoLearn: typeof ctx.onLesson === 'function',
@@ -751,7 +763,10 @@ async function runAgent(params) {
     taskState: taskState,
     apiKey: apiKey,
     rules: userRules,
-    onLesson: autoLearn ? onLesson : null
+    onLesson: autoLearn ? onLesson : null,
+    /* 本轮写入快照：宿主传入共享数组（子任务也写进同一份），run 结束后
+     * 宿主据此生成「撤回本轮改动」条目。 */
+    snapshots: Array.isArray(params.snapshots) ? params.snapshots : []
   };
 
   function phase(text) {

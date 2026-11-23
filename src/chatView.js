@@ -5,6 +5,8 @@ const fs = require('fs');
 const manifest = require('../package.json');
 const runtime = require('./runtime');
 const { runAgent } = require('./agent');
+const compact = require('./compact');
+const snapLib = require('./snapshots');
 
 const EXT_ID = manifest.publisher + '.' + manifest.name;
 
@@ -32,6 +34,9 @@ class ChatViewProvider {
     this._history = this._findSession(this._activeId).history;
     this._pending = [];
     this._attachments = [];  // imported files shown above the input box
+    /* 每轮写入快照（内存，最多 5 轮）：{ id, at, files: [{rel, existed, content}] }。
+     * 只存内存：文件内容可能很大，落盘的过期快照重启后反而危险。 */
+    this._snapshots = [];
     this._cts = null;
     this._busy = false;
     this._lastAnswer = '';
@@ -240,6 +245,7 @@ class ChatViewProvider {
           '<button id="keybtn" class="menu-item" title="设置或更换 API Key">设置 API Key</button>' +
           '<button id="rules" class="menu-item" title="管理长期要求">长期要求 (0)</button>' +
           '<button id="lessons" class="menu-item" title="查看/删除自动总结的经验">经验记忆 (0)</button>' +
+          '<button id="profiles" class="menu-item" title="多套模型配置一键切换">模型配置</button>' +
           '<div class="menu-sep"></div>' +
           '<button id="panelbtn" class="menu-item" title="在编辑器区域打开独立聊天窗">在新面板打开</button>' +
           '<button id="endpoint" class="menu-item" title="设置服务地址 / 端口">服务地址 / 端口</button>' +
@@ -319,6 +325,8 @@ class ChatViewProvider {
       writeConfirm: config.constraints.confirmWrite === true,
       allowShell: summary.constraints.allowShell,
       subtaskMode: config.subtaskMode === true,
+      profileCount: runtime.getProfiles().length,
+      profileName: runtime.activeProfileName(),
       maxToolRounds: config.maxToolRounds,
       maxHistoryMessages: config.maxHistoryMessages,
       timeoutSec: Math.round(config.timeoutMs / 1000)
@@ -377,6 +385,38 @@ class ChatViewProvider {
     this._post({ type: 'attachmentRemoved', id: id }, false);
   }
 
+  /* 撤回某一轮的文件改动：恢复原内容 / 删除新建文件。一次性，撤完即失效。 */
+  async _revertSnapshot(id) {
+    const idx = this._snapshots.findIndex(function (s) { return s.id === id; });
+    if (idx < 0) {
+      this._post({ type: 'notice', text: '这份快照已失效（只能撤回最近几轮、且重启后不可撤回）。' }, false);
+      return;
+    }
+    const entry = this._snapshots[idx];
+    const root = (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0])
+      ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
+    if (!root) {
+      this._post({ type: 'error', text: '没有打开的工作区文件夹，无法撤回。' }, false);
+      return;
+    }
+    const answer = await vscode.window.showWarningMessage(
+      '撤回这一轮的文件改动？将恢复/删除：' + snapLib.describeFiles(entry.files).join('、'),
+      { modal: true },
+      '撤回'
+    );
+    if (answer !== '撤回') { return; }
+    const results = snapLib.revert(root, entry.files);
+    this._snapshots.splice(idx, 1);
+    const okCount = results.filter(function (r) { return r.ok; }).length;
+    const bad = results.filter(function (r) { return !r.ok; })
+      .map(function (r) { return r.rel + '（' + r.reason + '）'; });
+    this._post({ type: 'notice', text: '已撤回本轮改动：' + okCount + '/' + results.length + ' 个文件' +
+      (bad.length ? '；失败：' + bad.join('、') : '') }, false);
+    runtime.log('snapshot reverted: ' + id + ' -> ' + results.map(function (r) {
+      return r.rel + '=' + (r.ok ? r.action : 'FAILED');
+    }).join(', '));
+  }
+
   getLastAnswer() { return this._lastAnswer; }
 
   clearHistory() {
@@ -418,6 +458,11 @@ class ChatViewProvider {
       case 'lessons':
         vscode.commands.executeCommand('win7Agent.manageLessons');
         break;
+      case 'profiles':
+        vscode.commands.executeCommand('win7Agent.switchProfile');
+        break;
+      case 'revertSnapshot':
+        return this._revertSnapshot(String(msg.id || ''));
       case 'send':
         return this._handleSend(String(msg.text || ''), entry);
       case 'stop':
@@ -564,6 +609,28 @@ class ChatViewProvider {
     this._touchSessionTitle(text);
 
     try {
+      /* 自动上下文压缩（v1.10）：历史超过 agent 的同款限额时，先把被淘汰的
+       * 旧消息摘要成一条，替换进会话历史，长任务不再因硬上限丢开头。失败
+       * 静默降级为普通裁剪，绝不影响本轮对话。 */
+      try {
+        const report = await compact.compactIfNeeded({
+          config: config,
+          apiKey: apiKey,
+          history: this._history,
+          token: this._cts.token
+        });
+        if (report && report.ok) {
+          this._saveSessions();
+          this._post({ type: 'notice', text: '历史较长，已自动压缩：' + report.dropped +
+            ' 条旧消息 → 摘要 ' + report.summaryChars + ' 字（保留最近 ' + report.kept + ' 条）' }, false);
+        } else if (report && report.error) {
+          runtime.log('compaction skipped: ' + report.error);
+        }
+      } catch (e) {
+        runtime.log('compaction failed (ignored): ' + (e && e.message ? e.message : String(e)));
+      }
+
+      const snap = [];
       const reply = await runAgent({
         config: config,
         apiKey: apiKey || '',
@@ -584,10 +651,18 @@ class ChatViewProvider {
             repeated: Boolean(saved.repeated)
           }, false);
         },
-        onEvent: (evt) => { this._post(evt, false); }
+        onEvent: (evt) => { this._post(evt, false); },
+        snapshots: snap
       });
       this._history.push({ role: 'assistant', content: reply });
       this._lastAnswer = reply;
+      /* 本轮有真实写入 → 生成可撤回条目发给面板。 */
+      if (snap.length) {
+        const entry = { id: 'snap-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e4).toString(36), at: Date.now(), files: snap.slice() };
+        this._snapshots.unshift(entry);
+        while (this._snapshots.length > 5) { this._snapshots.pop(); }
+        this._post({ type: 'snapshot', id: entry.id, files: snapLib.describeFiles(entry.files) }, false);
+      }
     } catch (err) {
       runtime.log('runAgent failed: ' + (err && err.message ? err.message : String(err)));
       this._post({ type: 'error', text: err && err.message ? err.message : String(err) }, false);

@@ -393,4 +393,34 @@ check('a failed tool turns its running line into the failure row, repeats collap
   hostMessage({ type: 'busy', value: false, elapsedMs: 100 });  // 收掉计时器，进程才能退出
 });
 
+check('snapshot revert row renders and posts revertSnapshot with the row id (v1.10.0)', function () {
+  hostMessage({ type: 'busy', value: true });
+  hostMessage({ type: 'start' });
+  hostMessage({ type: 'snapshot', id: 'snap-test-1', files: ['report.md', 'data/out.csv（新建）'] });
+  const kids = els.messages.children;
+  const row = kids[kids.length - 1];
+  assert.ok(row.className.indexOf('snapshot') !== -1, 'the last row must be the snapshot entry');
+  const btn = row.children.filter(function (c) { return c.className === 'snap-undo'; })[0];
+  assert.ok(btn, 'the row must contain the undo button');
+  assert.strictEqual(btn.getAttribute('data-id'), 'snap-test-1');
+  assert.ok(/撤回本轮改动/.test(btn.textContent) && /2 个文件/.test(btn.textContent), 'button text must name the action and count');
+  posted.length = 0;
+  btn.closest = function (sel) { return sel === '.snap-undo' ? btn : null; };  // 桩 closest 默认返 null，覆写以命中委托
+  fire(els.messages, 'click', { target: btn });
+  const req = posted.filter(function (m) { return m.type === 'revertSnapshot'; });
+  assert.strictEqual(req.length, 1, 'clicking undo must ask the host to revert');
+  assert.strictEqual(req[0].id, 'snap-test-1');
+  assert.strictEqual(btn.disabled, true, 'the button must disable immediately to avoid double-revert');
+  hostMessage({ type: 'busy', value: false, elapsedMs: 100 });
+});
+
+check('profiles menu button exists and posts the profiles message (v1.10.0)', function () {
+  const btn = documentStub.getElementById('profiles');
+  assert.ok(btn, 'the menu must contain the model-profile switcher');
+  posted.length = 0;
+  fire(btn, 'click');
+  const req = posted.filter(function (m) { return m.type === 'profiles'; });
+  assert.strictEqual(req.length, 1, 'clicking the button must open the profile switcher');
+});
+
 console.log('\nMention UI check passed: ' + pass + ' scenarios.');

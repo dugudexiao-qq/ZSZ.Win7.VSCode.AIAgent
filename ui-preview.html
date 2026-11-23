@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ZSZ.Win7.VSCode.AIAgent · 正式发布版 v1.9.3 · 界面预览</title>
+<title>ZSZ.Win7.VSCode.AIAgent · 正式发布版 v1.10.0 · 界面预览</title>
 <style>
 :root {
   /* 与扩展 media/chat.css 中的 --vscode-* 一一对应（VS Code Dark Modern 近似值） */
@@ -301,7 +301,7 @@ body {
   <div class="topbar">
     <img class="brandicon" src="media/icon.png" alt="插件图标" width="34" height="34" />
     <h1>ZSZ.Win7.VSCode.AIAgent <span style="opacity:.75;font-size:.62em;font-weight:600">正式发布版</span></h1>
-    <span class="sub">v1.9.3 · © dugudexiao · MIT · 目标 VS Code 1.70.2 / Windows 7</span>
+    <span class="sub">v1.10.0 · © dugudexiao · MIT · 目标 VS Code 1.70.2 / Windows 7</span>
     <span class="spacer"></span>
     <button class="topbtn" id="awaitBtn" type="button">演示黄色等待确认</button>
     <button class="topbtn" id="themeBtn" type="button">切换浅色主题</button>
@@ -332,11 +332,12 @@ body {
               <span id="keystate" class="badge ok" title="点击查看连接诊断">local</span>
               <button id="menuToggle" class="iconbtn menu-toggle" title="选项" aria-label="选项" aria-expanded="false" type="button">···</button>
               <div id="menu" class="menu" hidden>
-                <div class="menu-head"><button id="author" class="menu-author" title="© 2026 dugudexiao · MIT 许可 · 点击查看关于" type="button">© dugudexiao · MIT · v1.9.3</button></div>
+                <div class="menu-head"><button id="author" class="menu-author" title="© 2026 dugudexiao · MIT 许可 · 点击查看关于" type="button">© dugudexiao · MIT · v1.10.0</button></div>
                 <button id="clear" class="menu-item" title="清空当前对话（屏幕和上下文都清）" type="button">清空当前对话</button>
                 <button id="keybtn" class="menu-item" title="设置或更换 API Key" type="button">设置 API Key</button>
                 <button id="rules" class="menu-item" title="管理长期要求" type="button">长期要求 (2)</button>
                 <button id="lessons" class="menu-item" title="查看/删除自动总结的经验" type="button">经验记忆 (1)</button>
+                <button id="profiles" class="menu-item" title="多套「服务地址 + 模型 + key」一键切换" type="button">模型配置 (2)</button>
                 <div class="menu-sep"></div>
                 <button id="panelbtn" class="menu-item" title="在编辑器区域打开独立聊天窗" type="button">在新面板打开</button>
                 <button id="endpoint" class="menu-item" title="设置服务地址 / 端口" type="button">服务地址 / 端口</button>

@@ -349,6 +349,77 @@ function activate(context) {
     })
   );
 
+  /* ---- named model profiles: several endpoint/model/key combos, one-click switch ----
+   * 离线机常见「本地小模型 + 内网大模型」两套配置，逐项手改太繁琐。这里把
+   * 当前配置存成命名 profile，菜单里一键切回。key 随 profile 存本机 globalState。 */
+  context.subscriptions.push(
+    vscode.commands.registerCommand('win7Agent.switchProfile', async function () {
+      const profiles = runtime.getProfiles();
+      const activeName = runtime.activeProfileName();
+      const config = runtime.getConfig();
+      const items = profiles.map(function (p) {
+        const isActive = p.name === activeName;
+        return {
+          label: (isActive ? '$(check) ' : '$(plug) ') + p.name,
+          description: p.baseUrl + ' / ' + (p.model || '(默认模型)') + (isActive ? ' · 当前' : ''),
+          action: 'switch', name: p.name
+        };
+      });
+      if (!profiles.length) {
+        items.push({ label: '$(info) 还没有保存的配置', description: '先把当前的服务地址/模型存为第一份配置', action: 'noop' });
+      }
+      items.push({ label: '$(add) 把当前配置存为新配置…', description: config.baseUrl + ' / ' + config.model, action: 'add' });
+      if (profiles.length) {
+        items.push({ label: '$(trash) 删除一个配置…', description: '删除后不影响当前生效的连接', action: 'del' });
+      }
+      const pick = await vscode.window.showQuickPick(items, {
+        placeHolder: '模型配置 ' + profiles.length + '/' + 8 + '｜当前：' + (activeName || '自定义（未匹配任何配置）')
+      });
+      if (!pick) { return; }
+      if (pick.action === 'switch') {
+        const target = profiles.find(function (p) { return p.name === pick.name; });
+        if (!target) { return; }
+        try {
+          await runtime.applyProfile(target);
+          await refresh();
+          vscode.window.showInformationMessage(APP + ': 已切换到配置「' + target.name + '」（' +
+            target.baseUrl + ' / ' + target.model + '）。', '诊断连接')
+            .then(function (choice) {
+              if (choice === '诊断连接') { vscode.commands.executeCommand('win7Agent.diagnose'); }
+            });
+        } catch (e) {
+          vscode.window.showErrorMessage(APP + ': 切换配置失败（' + (e && e.message ? e.message : e) + '）');
+        }
+      } else if (pick.action === 'add') {
+        const name = await vscode.window.showInputBox({
+          prompt: '给当前配置起个名字（例如：本地 llama / 内网大模型）',
+          placeHolder: '配置名',
+          ignoreFocusOut: true
+        });
+        if (name === undefined) { return; }
+        const key = await runtime.getApiKey();
+        const result = await runtime.addProfile(name, config.baseUrl, config.model, key || '');
+        await refresh();
+        if (result.ok) {
+          vscode.window.showInformationMessage(APP + ': 已保存配置「' + String(name).trim() + '」，之后可在本菜单一键切换。');
+        } else {
+          vscode.window.showWarningMessage(APP + ': ' + result.message);
+        }
+      } else if (pick.action === 'del') {
+        const delItems = profiles.map(function (p) {
+          return { label: p.name, description: p.baseUrl + ' / ' + p.model };
+        });
+        const victim = await vscode.window.showQuickPick(delItems, { placeHolder: '选择要删除的配置' });
+        if (!victim) { return; }
+        const answer = await vscode.window.showWarningMessage('删除配置「' + victim.label + '」？', { modal: true }, '删除');
+        if (answer !== '删除') { return; }
+        const result = await runtime.deleteProfile(victim.label);
+        await refresh();
+        vscode.window.showInformationMessage(APP + (result.ok ? ': 已删除。' : ': ' + result.message));
+      }
+    })
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand('win7Agent.askSelection', async function () {
       const editor = vscode.window.activeTextEditor;

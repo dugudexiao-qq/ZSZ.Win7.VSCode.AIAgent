@@ -5,6 +5,7 @@ const manifest = require('../package.json');
 const { isLocalEndpoint } = require('./llmClient');
 const { normalizeRules, normalizeConstraints, sanitizeRule, compileSystemPrompt, MAX_RULES } = require('./rules');
 const lessonsLib = require('./lessons');
+const profilesLib = require('./profiles');
 
 const SECRET_KEY = 'win7Agent.apiKey';
 const MEMORY_RULES_KEY = 'win7Agent.memoryRules';
@@ -307,6 +308,85 @@ async function saveSessions(state) {
   }
 }
 
+/* ---- named model profiles (persisted in globalState) ----
+ * 每个 profile 是一套「名字 + 服务地址 + 模型 + key」。切换 = 把 baseUrl/model
+ * 写进设置、key 写进 SecretStorage。key 存在 profile 里只落在本机 globalState，
+ * 与 SecretStorage 同级的安全边界（本机用户数据目录），文档里写明。 */
+
+const PROFILES_KEY = 'win7Agent.profiles';
+let profilesCache = [];
+
+function getProfiles() {
+  if (!ctx) { return profilesCache.slice(); }
+  try {
+    profilesCache = profilesLib.normalizeProfiles(ctx.globalState.get(PROFILES_KEY, []));
+  } catch (e) {
+    log('globalState unavailable, profiles are kept in memory only: ' + e.message);
+  }
+  return profilesCache.slice();
+}
+
+async function saveProfiles(list) {
+  const items = profilesLib.normalizeProfiles(list);
+  profilesCache = items;
+  if (!ctx) { return false; }
+  try {
+    await ctx.globalState.update(PROFILES_KEY, items);
+    return true;
+  } catch (e) {
+    log('globalState.update failed, profiles kept in memory only: ' + e.message);
+    return false;
+  }
+}
+
+async function addProfile(name, baseUrl, model, key) {
+  const entry = {
+    name: String(name || '').trim(),
+    baseUrl: String(baseUrl || '').trim().replace(/\/+$/, ''),
+    model: String(model || '').trim(),
+    key: String(key || ''),
+    at: Date.now()
+  };
+  const current = getProfiles();
+  const dup = current.some(function (p) { return p.name.toLowerCase() === entry.name.toLowerCase(); });
+  if (dup) { return { ok: false, message: '同名配置已存在' }; }
+  if (current.length >= profilesLib.MAX_PROFILES) {
+    return { ok: false, message: '配置数量已达上限 ' + profilesLib.MAX_PROFILES + ' 个，请先删除一个' };
+  }
+  if (!entry.name || (!entry.baseUrl && !entry.model)) {
+    return { ok: false, message: '配置缺少名字或服务地址' };
+  }
+  current.push(entry);
+  await saveProfiles(current);
+  log('profile added: ' + entry.name + ' -> ' + entry.baseUrl + ' / ' + entry.model);
+  return { ok: true, count: current.length };
+}
+
+async function deleteProfile(name) {
+  const current = getProfiles();
+  const result = profilesLib.deleteProfile(current, name);
+  if (!result.ok) { return { ok: false, message: '没有这个配置' }; }
+  await saveProfiles(result.list);
+  return { ok: true, count: result.list.length };
+}
+
+function activeProfileName() {
+  const config = getConfig();
+  return profilesLib.findActive(getProfiles(), config.baseUrl, config.model);
+}
+
+/* 把一个 profile 应用为当前配置：写 baseUrl/model 到设置（与手改同一作用域），
+ * key 写进 SecretStorage（本地端点允许空 key）。 */
+async function applyProfile(profile) {
+  const cfg = vscode.workspace.getConfiguration('win7Agent');
+  const target = settingTarget(cfg, 'baseUrl');
+  await cfg.update('baseUrl', String(profile.baseUrl || ''), target);
+  await cfg.update('model', String(profile.model || ''), target);
+  await setApiKey(String(profile.key || ''));
+  log('profile applied: ' + profile.name + ' -> ' + profile.baseUrl + ' / ' + profile.model);
+  return getConfig();
+}
+
 function getRuleSummary() {
   const config = getConfig();
   const memory = getMemoryRules();
@@ -458,6 +538,12 @@ module.exports = {
   setWriteConfirm,
   isSubtaskMode,
   setSubtaskMode,
+  getProfiles,
+  saveProfiles,
+  addProfile,
+  deleteProfile,
+  activeProfileName,
+  applyProfile,
   settingTarget,
   describeSettingScope,
   log,

@@ -740,9 +740,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.9.3, no built-in endpoint/model, 20 commands, all activation events', function () {
+  check('manifest: 1.10.0, no built-in endpoint/model, 21 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.9.3');
+    assert.strictEqual(manifest.version, '1.10.0');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -773,8 +773,9 @@ try {
     assert.strictEqual(props['win7Agent.constraints.deniedTools'].default.indexOf('runCommand'), -1, 'runCommand must not be blacklisted by default');
     const factoryRules = props['win7Agent.defaultRules'].default.join('\n');
     assert.ok(!/不修改任何文件|默认只做解释和建议/.test(factoryRules), 'factory rules must NOT forbid writing files');
-    assert.strictEqual(manifest.contributes.commands.length, 20);
+    assert.strictEqual(manifest.contributes.commands.length, 21);
     const ids = manifest.contributes.commands.map(function (c) { return c.command; });
+    assert.ok(ids.indexOf('win7Agent.switchProfile') !== -1, 'model-profile switcher command must exist');
     assert.ok(ids.indexOf('win7Agent.toggleShellConfirm') !== -1, 'shell-confirmation toggle command must exist');
     assert.ok(ids.indexOf('win7Agent.toggleWriteConfirm') !== -1, 'write-confirmation toggle command must exist');
     assert.ok(ids.indexOf('win7Agent.toggleSubtaskMode') !== -1, 'subtask-mode toggle command must exist');

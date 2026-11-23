@@ -943,6 +943,179 @@ async function main() {
     delete require.cache[llmPath];
   });
 
+  /* ---- v1.10.0: named model profiles ---- */
+
+  await test('profiles: normalize keeps valid entries, dedupes by name, caps the list', function () {
+    const lib = require('../src/profiles');
+    const list = lib.normalizeProfiles([
+      { name: 'local', baseUrl: 'http://127.0.0.1:1234/v1/', model: 'qwen', key: 'k1' },
+      { name: '', baseUrl: 'http://x' },                       // no name -> dropped
+      { name: 'local', baseUrl: 'http://other' },              // dup name -> dropped
+      { name: 'cloud', model: 'gpt' },                          // model-only allowed
+      { name: 'bad', baseUrl: '', model: '' }                   // nothing at all -> dropped
+    ]);
+    assert.strictEqual(list.length, 2);
+    assert.strictEqual(list[0].baseUrl, 'http://127.0.0.1:1234/v1', 'trailing slash must be trimmed');
+    assert.strictEqual(list[1].name, 'cloud');
+    assert.strictEqual(lib.MAX_PROFILES, 8);
+  });
+
+  await test('profiles: active detection is exact on baseUrl AND model', function () {
+    const lib = require('../src/profiles');
+    const list = lib.normalizeProfiles([
+      { name: 'local', baseUrl: 'http://127.0.0.1:1234/v1', model: 'qwen' },
+      { name: 'cloud', baseUrl: 'http://api.example.com/v1', model: 'big' }
+    ]);
+    assert.strictEqual(lib.findActive(list, 'http://127.0.0.1:1234/v1', 'qwen'), 'local');
+    assert.strictEqual(lib.findActive(list, 'http://127.0.0.1:1234/v1', 'other'), '');
+    assert.strictEqual(lib.findActive(list, '', ''), '');
+  });
+
+  await test('profiles: deleteProfile removes by name case-insensitively', function () {
+    const lib = require('../src/profiles');
+    const list = lib.normalizeProfiles([{ name: 'Local', baseUrl: 'http://a', model: 'm' }]);
+    const r = lib.deleteProfile(list, 'local');
+    assert.ok(r.ok);
+    assert.strictEqual(r.list.length, 0);
+    assert.strictEqual(lib.deleteProfile(list, 'nope').ok, false);
+  });
+
+  /* ---- v1.10.0: automatic context compaction ---- */
+
+  await test('compact: needsCompaction mirrors takeRecent limits and needs MIN_DROPPED turns', function () {
+    const compact = require('../src/compact');
+    const cfg = { maxHistoryMessages: 10, maxContextChars: 100000 };
+    const short = [];
+    for (let i = 0; i < 8; i++) { short.push({ role: 'user', content: 'msg ' + i }); }
+    assert.strictEqual(compact.needsCompaction(short, cfg).needed, false, '8 dropped would be < MIN_DROPPED only under 10-limit... actually 0 dropped here');
+    const long = [];
+    for (let i = 0; i < 16; i++) { long.push({ role: i % 2 ? 'assistant' : 'user', content: 'm' + i }); }
+    const chk = compact.needsCompaction(long, cfg);
+    assert.ok(chk.needed, '16 messages with a 10-limit must compact');
+    assert.strictEqual(chk.dropped, 6);
+    assert.strictEqual(chk.recent.messages.length, 10);
+  });
+
+  await test('compact: buildSummaryMessages frames roles and caps input size', function () {
+    const compact = require('../src/compact');
+    const msgs = compact.buildSummaryMessages([
+      { role: 'user', content: '帮我建 a.md' },
+      { role: 'assistant', content: '已创建 a.md' },
+      { role: 'user', content: 'x'.repeat(compact.MAX_SUMMARY_INPUT_CHARS + 500) }
+    ]);
+    assert.strictEqual(msgs.length, 2);
+    assert.strictEqual(msgs[0].role, 'system');
+    assert.ok(/摘要/.test(msgs[0].content));
+    assert.ok(/帮我建 a\.md/.test(msgs[1].content));
+    assert.ok(/已创建 a\.md/.test(msgs[1].content));
+    assert.ok(msgs[1].content.length <= compact.MAX_SUMMARY_INPUT_CHARS + 200,
+      'oversized input must be truncated, got ' + msgs[1].content.length);
+    assert.ok(/已省略/.test(msgs[1].content), 'the truncation marker must be present');
+  });
+
+  await test('compact: applySummary replaces history in place and marks the summary', function () {
+    const compact = require('../src/compact');
+    const history = [];
+    for (let i = 0; i < 6; i++) { history.push({ role: 'user', content: 'old ' + i }); }
+    const kept = [{ role: 'user', content: 'recent question' }];
+    const msg = compact.applySummary(history, kept, '  要点一\n要点二  ');
+    assert.strictEqual(history.length, 2);
+    assert.strictEqual(history[0], msg);
+    assert.ok(history[0].content.indexOf(compact.SUMMARY_MARKER) === 0);
+    assert.ok(/要点一/.test(history[0].content));
+    assert.strictEqual(history[1].content, 'recent question');
+  });
+
+  /* ---- v1.10.0: per-round write snapshots ---- */
+
+  await test('snapshots: captureBefore records existence and content', function () {
+    const snap = require('../src/snapshots');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zsz-snap-'));
+    try {
+      const existing = path.join(dir, 'a.txt');
+      fs.writeFileSync(existing, 'old content', 'utf8');
+      const rec1 = snap.captureBefore(existing, 'a.txt');
+      assert.strictEqual(rec1.existed, true);
+      assert.strictEqual(rec1.content, 'old content');
+      const missing = path.join(dir, 'new.txt');
+      const rec2 = snap.captureBefore(missing, 'new.txt');
+      assert.strictEqual(rec2.existed, false);
+      assert.strictEqual(rec2.content, null);
+      fs.writeFileSync(path.join(dir, 'big.bin'), 'x');
+      const rec3 = snap.captureBefore(path.join(dir, 'big.bin'), 'big.bin');
+      assert.ok(rec3, 'readable files must snapshot');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await test('snapshots: revert restores overwritten files and deletes created ones', function () {
+    const snap = require('../src/snapshots');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zsz-snap-'));
+    try {
+      const existing = path.join(dir, 'a.txt');
+      const created = path.join(dir, 'sub', 'b.txt');
+      fs.mkdirSync(path.dirname(created), { recursive: true });
+      fs.writeFileSync(existing, 'original', 'utf8');
+      const records = [
+        snap.captureBefore(existing, 'a.txt'),
+        snap.captureBefore(created, path.join('sub', 'b.txt'))
+      ];
+      snap.record([], records[0]);  // record() must append safely to any array
+      // simulate the round: overwrite a.txt, create sub/b.txt
+      fs.writeFileSync(existing, 'rewritten by agent', 'utf8');
+      fs.writeFileSync(created, 'fresh file', 'utf8');
+      const results = snap.revert(dir, records);
+      assert.strictEqual(results.length, 2);
+      assert.ok(results.every(function (r) { return r.ok; }), JSON.stringify(results));
+      assert.strictEqual(fs.readFileSync(existing, 'utf8'), 'original', 'overwritten file must be restored');
+      assert.ok(!fs.existsSync(created), 'created file must be deleted');
+      // reverting twice from the same records would recreate a.txt; that is
+      // the caller's job to prevent (host drops the entry) — document behaviour:
+      assert.ok(snap.describeFiles(records).some(function (d) { return /a\.txt/.test(d); }));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await test('snapshots: refuses to restore outside the workspace root', function () {
+    const snap = require('../src/snapshots');
+    const inside = fs.mkdtempSync(path.join(os.tmpdir(), 'zsz-snap-in-'));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'zsz-snap-out-'));
+    try {
+      const results = snap.revert(inside, [{ rel: path.join('..', path.basename(outside), 'evil.txt'), existed: false, content: null }]);
+      assert.strictEqual(results.length, 1);
+      assert.strictEqual(results[0].ok, false, 'a .. path must be refused');
+    } finally {
+      fs.rmSync(inside, { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  await test('agent runAgent accepts a shared snapshots array (sub-agents included)', async function () {
+    const snap = require('../src/snapshots');
+    const target = path.join(root, 'snap-me.txt');
+    fs.writeFileSync(target, 'before', 'utf8');
+    const shared = [];
+    const cfg = runtime.getConfig();
+    cfg.constraints = Object.assign({}, cfg.constraints, { confirmWrite: false });
+    await runtime.setWriteMode(true);
+    const answer = await agent.runTool(
+      { tool: 'saveText', args: { path: 'snap-me.txt', text: 'after' } },
+      cfg,
+      { emit: function () {}, token: { isCancellationRequested: false }, snapshots: shared, depth: 0, taskState: { subtasks: 0 } }
+    );
+    assert.ok(/Wrote/.test(answer), answer);
+    assert.strictEqual(shared.length, 1, 'the write must leave exactly one snapshot record');
+    assert.strictEqual(shared[0].rel, 'snap-me.txt');
+    assert.strictEqual(shared[0].existed, true);
+    assert.strictEqual(shared[0].content, 'before');
+    const results = snap.revert(root, shared);
+    assert.ok(results[0].ok);
+    assert.strictEqual(fs.readFileSync(target, 'utf8'), 'before', 'revert must restore the pre-write content');
+    await runtime.setWriteMode(false);
+  });
+
   await runtime.setWriteMode(false);
   editor = null;
   fs.rmSync(root, { recursive: true, force: true });

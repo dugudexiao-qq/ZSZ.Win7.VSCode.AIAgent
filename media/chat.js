@@ -20,6 +20,7 @@
   var authorBtn = document.getElementById('author');
   var rulesBtn = document.getElementById('rules');
   var lessonsBtn = document.getElementById('lessons');
+  var profilesBtn = document.getElementById('profiles');
   var attachEl = document.getElementById('attachments');
   /* 标题旁的 4 个运行开关（写入模式 / 写入确认 / 命令确认 / 子任务）。
    * 常看常切，所以常驻图标 + 悬停说明，状态变化只改图标与 class。 */
@@ -178,6 +179,31 @@
     messagesEl.appendChild(el);
     scrollDown();
     return el;
+  }
+
+  /* 撤回条目（v1.10）：本轮 Agent 真实写入了文件时，在回复下方给一行
+   * 「↩ 撤回本轮改动」，点一下恢复原内容/删除新建文件。快照在宿主内存里
+   * 只保留最近几轮，重启后点击会得到「快照已失效」提示。 */
+  function addSnapshotRow(id, files) {
+    if (!id || !files.length) { return; }
+    var names = [];
+    for (var i = 0; i < files.length && i < 6; i++) { names.push(String(files[i] || '')); }
+    if (files.length > 6) { names.push('等 ' + files.length + ' 个文件'); }
+    var el = document.createElement('div');
+    el.className = 'msg snapshot';
+    var btn = document.createElement('button');
+    btn.className = 'snap-undo';
+    btn.type = 'button';
+    btn.setAttribute('data-id', id);
+    btn.textContent = '↩ 撤回本轮改动（' + files.length + ' 个文件）';
+    btn.title = '恢复这一轮写入前的文件内容；本轮新建的文件会被删除。\n' + names.join('\n');
+    el.appendChild(btn);
+    var label = document.createElement('span');
+    label.className = 'snap-files';
+    label.textContent = names.join('、');
+    el.appendChild(label);
+    messagesEl.appendChild(el);
+    scrollDown();
   }
 
   /* Completion check card. The host sends a verdict built from this round's
@@ -799,6 +825,9 @@
   if (lessonsBtn) {
     lessonsBtn.addEventListener('click', function () { vscode.postMessage({ type: 'lessons' }); });
   }
+  if (profilesBtn) {
+    profilesBtn.addEventListener('click', function () { vscode.postMessage({ type: 'profiles' }); });
+  }
   if (flagWrite) {
     flagWrite.addEventListener('click', function () { vscode.postMessage({ type: 'writeMode' }); });
   }
@@ -855,6 +884,15 @@
   /* 过程段的展开/收起用事件委托绑在消息区上：会话切换是 innerHTML 快照还原，
    * 直接绑在块上的监听器会被还原冲掉，委托不会。 */
   messagesEl.addEventListener('click', function (e) {
+    /* 撤回本轮改动按钮（v1.10）：消息区节点在会话切换时会被 innerHTML 快照
+     * 整体替换，所以用事件委托，data-id 恢复后依然有效。 */
+    var undo = e.target && e.target.closest ? e.target.closest('.snap-undo') : null;
+    if (undo && undo.getAttribute('data-id')) {
+      vscode.postMessage({ type: 'revertSnapshot', id: undo.getAttribute('data-id') });
+      undo.disabled = true;
+      undo.textContent = '已请求撤回…';
+      return;
+    }
     var t = e.target && e.target.closest ? e.target.closest('.seg-toggle') : null;
     if (!t) { return; }
     var seg = t.parentNode;
@@ -1186,6 +1224,11 @@
           (msg.memoryCount || 0) + ' 条）｜Shell ' + (msg.allowShell ? '开' : '关') +
           '｜超时 ' + msg.timeoutSec + ' s｜工具轮数 ' + msg.maxToolRounds +
           '｜历史 ' + msg.maxHistoryMessages + ' 条';
+        if (profilesBtn) {
+          profilesBtn.textContent = '模型配置 (' + (msg.profileCount || 0) + ')';
+          profilesBtn.title = '多套「服务地址 + 模型 + key」一键切换' +
+            (msg.profileName ? '｜当前：' + msg.profileName : '｜当前为自定义配置（未匹配任何已存配置）');
+        }
         break;
       case 'prefill':
         inputEl.value = msg.text || '';
@@ -1248,6 +1291,9 @@
       case 'lesson':
         addMessage('lesson', '已写进长期记忆：' + (msg.text || '') +
           (msg.count ? '（共 ' + msg.count + ' 条经验，可在菜单「经验记忆」里查看或删除）' : ''));
+        break;
+      case 'snapshot':
+        addSnapshotRow(msg.id || '', Array.isArray(msg.files) ? msg.files : []);
         break;
       case 'start':
         abandonPendingTool('已中断');
