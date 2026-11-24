@@ -1,6 +1,9 @@
-v1.11.1: refresh the lessons menu count in real time
+v1.11.2: sanitize imported HTML into plain text
 
-- The lesson event now updates the menu button count immediately
-  (previously it lagged until the whole run finished)
-- Wording: the transcript note now reads "saved to lesson memory"
-  so it is not confused with the separate standing-rules store
+- HTML/HTM imports are converted to readable text before entering the
+  context: scripts, styles, comments and tags are dropped, <title> becomes
+  a heading, block tags become line breaks, entities are decoded
+- Previously raw markup was injected (up to 60000 chars), which made small
+  models treat tags as content and script bodies as instructions
+- .htm and upper-case extensions are now accepted; unknown binary types
+  are refused with a message that explains why

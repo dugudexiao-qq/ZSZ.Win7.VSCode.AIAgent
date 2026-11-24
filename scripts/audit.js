@@ -777,6 +777,38 @@ async function main() {
     assert.ok(/旧版二进制|另存为/.test(legacy), legacy);
   });
 
+  await test('importFile: HTML is converted to plain text, never injected raw (v1.11.2)', async function () {
+    /* 小模型拿到整页 HTML 会把标签当内容、把脚本当指令，回答直接跑偏。 */
+    const page = '<!DOCTYPE html><html><head><title>设备手册</title>' +
+      '<style>.a{color:red}</style><script>alert("x"); function hack(){return 1;}</script></head>' +
+      '<body><!-- comment --><h1>频率范围</h1><p>1.5&nbsp;MHz &amp; 2.4&nbsp;MHz</p>' +
+      '<ul><li>条目一</li><li>条目二</li></ul><div>结尾</div></body></html>';
+    fs.writeFileSync(path.join(root, 'imp', 'manual.html'), page);
+    const text = await call('importFile', { path: 'imp/manual.html' });
+    assert.ok(/设备手册/.test(text), 'title must survive as a heading: ' + text);
+    assert.ok(/频率范围/.test(text) && /条目一/.test(text) && /结尾/.test(text), text);
+    assert.ok(!/<[a-z!/][^>]*>/i.test(text), 'no HTML tags may reach the model: ' + text);
+    assert.ok(!/alert\("x"\)|function hack/.test(text), 'script bodies must be dropped: ' + text);
+    assert.ok(!/color:red/.test(text), 'style bodies must be dropped: ' + text);
+    assert.ok(!/<!--/.test(text), 'comments must be dropped: ' + text);
+    assert.ok(/1\.5 MHz & 2\.4 MHz/.test(text), 'entities decoded + nbsp collapsed: ' + text);
+    // .htm 与大写扩展名同样走转换
+    fs.writeFileSync(path.join(root, 'imp', 'PAGE.HTM'), '<p>大写扩展名</p>');
+    const upper = await call('importFile', { path: 'imp/PAGE.HTM' });
+    assert.ok(/大写扩展名/.test(upper) && !/<p>/.test(upper), upper);
+  });
+
+  await test('importFile: binary / unknown types are refused with an actionable message', async function () {
+    assert.strictEqual(fileImport.isSupported('x.png'), false);
+    assert.strictEqual(fileImport.isSupported('x.html'), true, 'html stays importable (sanitised)');
+    assert.strictEqual(fileImport.isSupported('x.htm'), true, 'htm must be accepted too');
+    const bin = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x00, 0x01]);
+    fs.writeFileSync(path.join(root, 'imp', 'pic.png'), bin);
+    const refused = await call('importFile', { path: 'imp/pic.png' });
+    assert.ok(/不支持的文件类型/.test(refused), refused);
+    assert.ok(/二进制/.test(refused), 'the message must explain why: ' + refused);
+  });
+
   /* ---------- wave 2: adversarial / non-standard model output ---------- */
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'zsz-audit2-'));
   await runtime.setWriteMode(true);

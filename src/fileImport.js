@@ -18,17 +18,30 @@ const MAX_INPUT_BYTES = 8 * 1024 * 1024;
 const MAX_INFLATED_BYTES = 8 * 1024 * 1024;
 const MAX_TEXT_CHARS = 60000;
 
-const TEXT_EXT = ['.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.log', '.xml', '.yaml', '.yml', '.ini', '.js', '.ts', '.py', '.css', '.html'];
+const TEXT_EXT = ['.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.log', '.xml', '.yaml', '.yml', '.ini', '.js', '.ts', '.py', '.css'];
+/* .html/.htm 单独处理：原始标签（<style>/<script>/嵌套标签）对小模型是纯噪声，
+ * 直接注入会让它把标签当内容、把脚本当指令，回答跑偏甚至乱调工具。
+ * 导入时先转成纯文本再进上下文（见 htmlToText）。 */
+const HTML_EXT = ['.html', '.htm'];
 const ZIP_EXT = { '.docx': 'docx', '.xlsx': 'xlsx' };
 const LEGACY_EXT = ['.doc', '.xls'];
 
 function supportedExtensions() {
-  return TEXT_EXT.concat(Object.keys(ZIP_EXT));
+  return TEXT_EXT.concat(HTML_EXT).concat(Object.keys(ZIP_EXT));
 }
 
 function isSupported(filePath) {
   return supportedExtensions().indexOf(path.extname(String(filePath || '')).toLowerCase()) !== -1;
 }
+
+/* Named entities that actually show up in Chinese/English documents. Numeric
+ * (&#160;) and hex (&#xa0;) forms are handled generically; &amp; stays last so
+ * a decoded "&amp;lt;" cannot turn into "<". */
+const NAMED_ENTITIES = {
+  nbsp: ' ', copy: '©', reg: '®', trade: '™', hellip: '…', mdash: '—', ndash: '–',
+  ldquo: '“', rdquo: '”', lsquo: '‘', rsquo: '’', middot: '·', times: '×', divide: '÷',
+  deg: '°', plusmn: '±', laquo: '«', raquo: '»', yen: '¥', euro: '€', pound: '£'
+};
 
 function decodeXmlEntities(text) {
   return String(text)
@@ -36,7 +49,12 @@ function decodeXmlEntities(text) {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-f]+);/gi, function (m, h) { return String.fromCharCode(parseInt(h, 16)); })
     .replace(/&#(\d+);/g, function (m, n) { return String.fromCharCode(Number(n)); })
+    .replace(/&([a-z][a-z0-9]*);/gi, function (m, name) {
+      const v = NAMED_ENTITIES[String(name).toLowerCase()];
+      return v === undefined ? m : v;
+    })
     .replace(/&amp;/g, '&'); // must be last
 }
 
@@ -185,6 +203,34 @@ function xlsxToCsv(buf, entries) {
   }).join('\n\n');
 }
 
+/* HTML -> plain text for chat context. Zero dependencies, good enough for
+ * models: drop <script>/<style>/<noscript>/comments (their content is noise or
+ * actively misleading), keep <title> as a heading, turn block-level tags into
+ * line breaks, strip the rest, decode entities, collapse blank lines.
+ * The model then sees readable prose instead of a wall of markup. */
+function htmlToText(html) {
+  let s = String(html || '');
+  const titleMatch = s.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch ? stripTags(titleMatch[1]).replace(/\s+/g, ' ').trim() : '';
+  s = s.replace(/<!--[\s\S]*?-->/g, ' ');
+  s = s.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ');
+  s = s.replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ');
+  s = s.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript\s*>/gi, ' ');
+  /* head 里的 meta/link 全是噪声，整个丢掉（title 已单独取出） */
+  s = s.replace(/<head\b[^>]*>[\s\S]*?<\/head\s*>/gi, ' ');
+  s = s.replace(/<\s*br\s*\/?>/gi, '\n');
+  s = s.replace(/<\s*(li|tr|h[1-6]|p|div|section|article|header|footer|blockquote|pre|table)\b[^>]*>/gi, '\n');
+  s = s.replace(/<\s*\/\s*(li|tr|h[1-6]|p|div|section|article|header|footer|blockquote|pre|table|ul|ol)\s*>/gi, '\n');
+  s = s.replace(/<[^>]+>/g, '');
+  let text = decodeXmlEntities(s)
+    .replace(/[ \t\u00a0]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (title && text.indexOf(title) === -1) { text = '# ' + title + '\n\n' + text; }
+  return text;
+}
+
 function finish(text, kind, note) {
   const clean = String(text || '').replace(/\r\n/g, '\n');
   const truncated = clean.length > MAX_TEXT_CHARS;
@@ -206,7 +252,8 @@ function readAsText(filePath, opts) {
     throw new Error('旧版二进制 ' + ext + ' 无法在零依赖环境解析，请用 Word/Excel 另存为 .docx / .xlsx 后再导入。');
   }
   if (!isSupported(filePath)) {
-    throw new Error('不支持的文件类型 ' + (ext || '(无扩展名)') + '。支持：' + supportedExtensions().join(' '));
+    throw new Error('不支持的文件类型 ' + (ext || '(无扩展名)') + '。支持：' + supportedExtensions().join(' ') +
+      '（图片/音频/视频/压缩包/可执行文件等二进制格式无法作为文本上下文，请先转成文本或文档格式）。');
   }
   const stat = fs.statSync(filePath);
   if (stat.size > (options.maxBytes || MAX_INPUT_BYTES)) {
@@ -228,6 +275,10 @@ function readAsText(filePath, opts) {
   if (decoded.text.indexOf('\u0000') !== -1) {
     throw new Error('看起来是二进制文件，已跳过（请确认扩展名与内容一致）。');
   }
+  /* HTML 转纯文本再进上下文：原始标签对模型是噪声，脚本内容更会被误当指令。 */
+  if (HTML_EXT.indexOf(ext) !== -1) {
+    return finish(htmlToText(decoded.text), 'html', 'HTML 已转为纯文本（脚本/样式/标签已移除）');
+  }
   return finish(decoded.text, ext.replace(/^\./, '') || 'text', decoded.note);
 }
 
@@ -235,6 +286,7 @@ module.exports = {
   supportedExtensions: supportedExtensions,
   isSupported: isSupported,
   decodeText: decodeText,
+  htmlToText: htmlToText,
   decodeXmlEntities: decodeXmlEntities,
   zipEntries: zipEntries,
   extractEntry: extractEntry,
