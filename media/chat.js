@@ -1289,8 +1289,15 @@
         renderAttachments();
         break;
       case 'lesson':
-        addMessage('lesson', '已写进长期记忆：' + (msg.text || '') +
-          (msg.count ? '（共 ' + msg.count + ' 条经验，可在菜单「经验记忆」里查看或删除）' : ''));
+        addMessage('lesson', '已存入经验记忆：' + (msg.text || '') +
+          (msg.count ? '（共 ' + msg.count + ' 条，可在菜单「经验记忆」里查看或删除）' : ''));
+        /* 菜单按钮计数实时刷新：经验记忆的事件在工具循环里发出，等整轮结束
+         * 才由 state 刷新会让人以为「记了但没生效」。count 是宿主持久化后
+         * 回传的真实条数，直接用它更新按钮。 */
+        if (lessonsBtn && msg.count) {
+          lessonsBtn.textContent = '经验记忆 (' + msg.count + ')';
+          lessonsBtn.title = '工具报错后被修好时自动总结的经验 ' + msg.count + ' 条（点开可查看或删除）';
+        }
         break;
       case 'snapshot':
         addSnapshotRow(msg.id || '', Array.isArray(msg.files) ? msg.files : []);

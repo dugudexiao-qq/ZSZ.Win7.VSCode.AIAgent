@@ -1,1 +1,6 @@
-docs: correct last Win7-compatible Git for Windows version to 2.46.2 (per official requirements page)
+v1.11.1: refresh the lessons menu count in real time
+
+- The lesson event now updates the menu button count immediately
+  (previously it lagged until the whole run finished)
+- Wording: the transcript note now reads "saved to lesson memory"
+  so it is not confused with the separate standing-rules store

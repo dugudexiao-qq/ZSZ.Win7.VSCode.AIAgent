@@ -338,8 +338,11 @@ check('a learned lesson is reported in the transcript, not silently stored', fun
   hostMessage({ type: 'lesson', text: '单次写入上限 20000 字符：先拆小文件。', count: 3 });
   const msgs = els.messages.children.filter(function (c) { return c.className === 'msg lesson'; });
   assert.strictEqual(msgs.length, 1, 'the user must see what got memorized');
-  assert.ok(/已写进长期记忆/.test(msgs[0].textContent));
-  assert.ok(/共 3 条经验/.test(msgs[0].textContent), 'the count tells them where to manage it');
+  assert.ok(/已存入经验记忆/.test(msgs[0].textContent));
+  assert.ok(/共 3 条/.test(msgs[0].textContent), 'the count tells them where to manage it');
+  /* v1.11.1：菜单按钮计数必须实时刷新，不能等整轮结束的 state 才变。 */
+  assert.ok(/经验记忆 \(3\)/.test(els.lessons.textContent),
+    'the menu button must reflect the new lesson count immediately');
 });
 
 check('thoughts and tool calls interleave inline, collapsed by default (v1.9.0)', function () {

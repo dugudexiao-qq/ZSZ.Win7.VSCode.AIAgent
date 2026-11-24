@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.11.0-blue)](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.11.1-blue)](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -46,9 +46,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases)，下载 **v1.11.0** 的附件 `zsz-win7-vscode-aiagent-1.11.0.vsix`（约 168 KB）
-   （直链：[Releases/download/v1.11.0](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases/download/v1.11.0/zsz-win7-vscode-aiagent-1.11.0.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.0.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases)，下载 **v1.11.1** 的附件 `zsz-win7-vscode-aiagent-1.11.1.vsix`（约 168 KB）
+   （直链：[Releases/download/v1.11.1](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases/download/v1.11.1/zsz-win7-vscode-aiagent-1.11.1.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.1.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 **方式二：从源码打包**
@@ -107,6 +107,7 @@
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.11.1**：经验记忆条目写入后，菜单按钮计数实时刷新（原先要等整轮结束）；提示文案改为「已存入经验记忆」，与「长期要求」明确区分。
 - **v1.11.0**：runCommand 支持 Git Bash（`preferShell: auto/powershell/cmd/bash`，检测 bash.exe 自动选优）；系统提示词按可用 shell 注入语法规则；命令失败自动识别 shell 语法错配并给纠正提示；支持工作区 AGENTS.md 注入。
 - **v1.10.0**：多模型配置（profiles）一键切换；自动上下文压缩；每轮写入快照 + 一键撤回。
 - **v1.9.x**：过程展示重构（思考与工具穿插、默认折叠）；webview 缓存穿透；修复变形调用 JSON 漏显。
