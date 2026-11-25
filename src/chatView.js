@@ -42,6 +42,10 @@ class ChatViewProvider {
     /* 每轮写入快照（内存，最多 5 轮）：{ id, at, files: [{rel, existed, content}] }。
      * 只存内存：文件内容可能很大，落盘的过期快照重启后反而危险。 */
     this._snapshots = [];
+    /* 跨轮失败追踪：key = 会话 id，value = Map（结构见 agent.js pendingFixes）。
+     * 小模型常见的「这轮没修好、下一轮才修好」需要能接上，否则经验只在
+     * 单次 run 内有效，多数真实修复都会被丢掉。只存内存，不落盘。 */
+    this._fixMaps = Object.create(null);
     this._cts = null;
     this._busy = false;
     this._lastAnswer = '';
@@ -63,6 +67,14 @@ class ChatViewProvider {
       if (this._sessions[i].id === id) { return this._sessions[i]; }
     }
     return null;
+  }
+
+  /* 某个会话的失败追踪表（懒创建）。会话之间互不干扰，避免 A 会话的报错
+   * 被 B 会话的成功调用「顺手记成经验」。 */
+  _pendingFixesFor(id) {
+    const key = String(id || this._activeId || '');
+    if (!this._fixMaps[key]) { this._fixMaps[key] = new Map(); }
+    return this._fixMaps[key];
   }
 
   _sessionItems() {
@@ -130,6 +142,7 @@ class ChatViewProvider {
     }
     const wasActive = id === this._activeId;
     this._sessions.splice(idx, 1);
+    delete this._fixMaps[String(id)];
     if (!this._sessions.length) { this._sessions.push(this._blankSession()); }
     if (wasActive) {
       this._activeId = this._sessions[0].id;
@@ -457,6 +470,8 @@ class ChatViewProvider {
     this._history = s ? s.history : [];
     this._attachments = [];
     this._lastAnswer = '';
+    /* 清空对话 = 放弃这条线索，上一轮的失败不该再被下一次成功「顺手」记录。 */
+    delete this._fixMaps[String(this._activeId)];
     this._post({ type: 'cleared' }, false);
     this._publishSessions();
     this._saveSessions();
@@ -670,6 +685,9 @@ class ChatViewProvider {
         token: this._cts.token,
         rules: { memoryRules: runtime.getMemoryRules(), lessons: runtime.getLessons() },
         autoLearn: config.autoLearn,
+        /* 跨轮复用同一份失败追踪表，让「上一轮报错、这一轮才修好」也能
+         * 沉淀成经验（只认同一工具的成功，换话题不会误记）。 */
+        pendingFixes: this._pendingFixesFor(this._activeId),
         /* 工具报错后被修好 → 沉淀成一条长期经验。渲染在这里做：宿主持久化成功后
          * 才往聊天区发提示，用户能看到「记住了什么」，而不是悄悄改提示词。 */
         onLesson: async (lesson) => {

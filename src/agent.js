@@ -724,6 +724,60 @@ function splitInlineThinking(content) {
   return { visible: visible, thinking: thinking };
 }
 
+/* ---- 失败追踪（自动经验记忆的原料）-------------------------------------
+ * key = 工具名，value = [{ tool, error, seq }]。
+ *
+ * 为什么不是「每个工具只留第一条错误」：
+ *   同一个工具在修好之前往往会连错几次，而且几次的错误可以完全不同
+ *   （第一次网络抖动/审批超时，第二次才是「文件已存在」）。只留第一条，
+ *   真正能总结的那条就被挡掉了 —— 这正是「跑了好几次、最后成功了，经验
+ *   却没记上」的主因。
+ *
+ * seq 是本轮序号：跨轮带过来的失败只能被「同一个工具」的成功消费。否则
+ * 用户换了话题、别的工具随便成功一次，就会凭空记一条不相关的经验。 */
+let RUN_SEQ = 0;
+const MAX_PENDING_PER_TOOL = 3;
+/* 失败最多带入下一轮：再久就与「这次真的修好了」无关了。 */
+const PENDING_FIX_TTL_RUNS = 1;
+
+function prunePendingFixes(map, runSeq) {
+  if (!map || typeof map.forEach !== 'function') { return; }
+  const stale = [];
+  map.forEach(function (list, tool) {
+    const kept = (Array.isArray(list) ? list : []).filter(function (e) {
+      return runSeq - (Number(e && e.seq) || 0) <= PENDING_FIX_TTL_RUNS;
+    });
+    if (kept.length) { map.set(tool, kept); } else { stale.push(tool); }
+  });
+  for (let i = 0; i < stale.length; i++) { map.delete(stale[i]); }
+}
+
+function notePendingFix(map, tool, error, runSeq) {
+  const sig = String(error || '').slice(0, 600);
+  if (!sig) { return; }
+  const list = (map.get(tool) || []).slice();
+  if (list.some(function (e) { return e.error === sig; })) { return; } // 同一错误重复出现不是新信息
+  list.push({ tool: tool, error: sig, seq: runSeq });
+  while (list.length > MAX_PENDING_PER_TOOL) { list.shift(); }
+  map.set(tool, list);
+}
+
+/* 取出「可以认为已解决」的失败：当前工具的全部；其它工具只取本轮内的
+ * （同一轮里有成功动作，说明 agent 是在往下推进，而不是换了话题）。 */
+function takePendingFixes(map, okTool, runSeq) {
+  const taken = [];
+  Array.from(map.keys()).forEach(function (tool) {
+    const list = map.get(tool) || [];
+    const rest = [];
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      if (tool === okTool || e.seq === runSeq) { taken.push(e); } else { rest.push(e); }
+    }
+    if (rest.length) { map.set(tool, rest); } else { map.delete(tool); }
+  });
+  return taken;
+}
+
 async function runAgent(params) {
   const config = params.config;
   const apiKey = params.apiKey;
@@ -733,12 +787,15 @@ async function runAgent(params) {
   const userRules = params.rules || {};
   const depth = Number(params.depth) || 0;
   const taskState = params.taskState || { subtasks: 0 };
-  /* Auto-lessons: only persist AFTER a failure was actually recovered from
-   * (a later call of the same tool succeeded), never on a lone error — an
-   * error the run never solved is not a lesson, it is just bad luck. */
+  /* Auto-lessons: only persist AFTER a failure was actually recovered from,
+   * never on a lone error — an error the run never solved is not a lesson,
+   * it is just bad luck. 宿主按会话传入同一个 Map，这样「这轮没修好、下轮
+   * 才修好」也能接上，不必要求一次 run 内自愈。 */
   const onLesson = typeof params.onLesson === 'function' ? params.onLesson : null;
   const autoLearn = params.autoLearn !== false && Boolean(onLesson);
-  const pendingFixes = new Map();
+  const pendingFixes = params.pendingFixes instanceof Map ? params.pendingFixes : new Map();
+  const runSeq = ++RUN_SEQ;
+  prunePendingFixes(pendingFixes, runSeq);
   const startedAt = Date.now();
   let producedChars = 0;
 
@@ -984,17 +1041,21 @@ async function runAgent(params) {
       const toolStatus = toolStatusOf(result);
       if (toolStatus === 'ok') { callFailures.delete(callKey); } else { callFailures.set(callKey, priorFails + 1); }
 
-      /* 自动经验记忆：失败先记在案，同一个工具后来跑成功了才算「问题已解决」，
-       * 这时才把解决方式沉淀成一条长期经验交给宿主持久化。只在报错当场总结
-       * 会把「这次就是跑不通」的噪声也记成经验。 */
-      if (toolStatus === 'failed' && !pendingFixes.has(call.tool)) {
-        pendingFixes.set(call.tool, { tool: call.tool, error: result });
+      /* 自动经验记忆：失败先记在案（同一工具可记多条不同错误），之后有成功
+       * 动作才算「问题已解决」，这时才把解决方式沉淀成经验交给宿主持久化。
+       * 只在报错当场总结会把「这次就是跑不通」的噪声也记成经验。 */
+      if (toolStatus === 'failed') {
+        notePendingFix(pendingFixes, call.tool, result, runSeq);
       }
-      if (toolStatus === 'ok' && pendingFixes.has(call.tool)) {
-        const failure = pendingFixes.get(call.tool);
-        pendingFixes.delete(call.tool);
-        const lesson = lessons.deriveLesson(failure);
-        if (lesson && autoLearn) {
+      if (toolStatus === 'ok' && pendingFixes.size) {
+        /* 先把已解决的失败取出来（即使自动学习关着也要清账），否则关掉一阵
+         * 再打开会把旧账当成新经验补记。 */
+        const fixes = takePendingFixes(pendingFixes, call.tool, runSeq);
+        const taught = Object.create(null);
+        for (let i = 0; i < fixes.length && autoLearn; i++) {
+          const lesson = lessons.deriveLesson(fixes[i]);
+          if (!lesson || taught[lesson.id]) { continue; }
+          taught[lesson.id] = true;
           try { await onLesson(lesson); } catch (e) { /* 记忆失败不影响任务本身 */ }
         }
       }
@@ -1051,5 +1112,11 @@ module.exports = {
   MAX_RESULT_CHARS,
   DEFAULT_MAX_CONTEXT_CHARS,
   subtaskLimit,
-  SUBTASK_MAX_DEPTH
+  SUBTASK_MAX_DEPTH,
+  /* 纯函数，给离线审计用：失败追踪的入队 / 消费 / 过期规则 */
+  notePendingFix,
+  takePendingFixes,
+  prunePendingFixes,
+  MAX_PENDING_PER_TOOL,
+  PENDING_FIX_TTL_RUNS
 };

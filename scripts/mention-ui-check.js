@@ -355,6 +355,17 @@ check('a learned lesson is reported in the transcript, not silently stored', fun
     'the menu button must reflect the new lesson count immediately');
 });
 
+check('a repeated lesson refreshes the count without a second transcript line', function () {
+  const before = els.messages.children.filter(function (c) { return c.className === 'msg lesson'; }).length;
+  /* 同一类错误又踩了一次：宿主回传 repeated=true，只累加命中次数，
+   * 聊天区不该再出现一条「已存入经验记忆」。 */
+  hostMessage({ type: 'lesson', text: '同一类错误又踩了一次。', count: 4, repeated: true });
+  const after = els.messages.children.filter(function (c) { return c.className === 'msg lesson'; }).length;
+  assert.strictEqual(after, before, 'a reinforced lesson must not be announced again');
+  assert.ok(/经验记忆 \(4\)/.test(els.lessons.textContent),
+    'the count still has to move when an existing lesson is hit again');
+});
+
 check('a replay event rebuilds the transcript after a reopen or session switch (v1.11.4)', function () {
   // 先在屏幕上放一些旧内容，replay 必须清掉它们而不是追加
   hostMessage({ type: 'delta', text: '这是上一次会话的残留输出' });

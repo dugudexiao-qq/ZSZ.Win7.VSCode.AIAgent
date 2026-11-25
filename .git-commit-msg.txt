@@ -1,8 +1,14 @@
-docs: GitHub is now the primary repo (GitCode stays as a mirror)
+v1.11.5: make auto-lessons reachable and quiet on repeat
 
-- package.json: repository / homepage / bugs now point at
-  github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent
-- README: download section leads with GitHub Releases (raw binary
-  links work there), GitCode kept as a China-friendly mirror
-- GitHub Release v1.11.4 published with the VSIX attached via API
-  (fills the gap left by the revoked GitCode token)
+- Failure tracking now keeps every distinct error per tool (up to 3)
+  instead of only the first one. A first noisy error (network/reset) no
+  longer hides the meaningful one (file exists, too long, ...), which is
+  why lessons were sometimes missing after several failed attempts.
+- Pending failures survive into the next round: the same tool succeeding
+  later consumes them, so "fixed it on the second try" is finally learned.
+  A different tool succeeding across rounds never claims someone else's
+  failure; same-round workarounds still count as solved.
+- Failures older than one round are dropped instead of resurfacing later.
+- UI: a lesson that already exists only bumps its hit count; the
+  transcript no longer repeats "saved to lesson memory" for it.
+- Host keeps one tracking map per conversation (cleared on clear/delete).

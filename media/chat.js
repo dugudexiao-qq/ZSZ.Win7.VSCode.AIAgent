@@ -1303,8 +1303,6 @@
         renderAttachments();
         break;
       case 'lesson':
-        addMessage('lesson', '已存入经验记忆：' + (msg.text || '') +
-          (msg.count ? '（共 ' + msg.count + ' 条，可在菜单「经验记忆」里查看或删除）' : ''));
         /* 菜单按钮计数实时刷新：经验记忆的事件在工具循环里发出，等整轮结束
          * 才由 state 刷新会让人以为「记了但没生效」。count 是宿主持久化后
          * 回传的真实条数，直接用它更新按钮。 */
@@ -1312,6 +1310,12 @@
           lessonsBtn.textContent = '经验记忆 (' + msg.count + ')';
           lessonsBtn.title = '工具报错后被修好时自动总结的经验 ' + msg.count + ' 条（点开可查看或删除）';
         }
+        /* 同一类错误又踩了一次（repeated）：命中次数由宿主累加即可，不再往
+         * 聊天区重复播报「已存入经验记忆」——那条提示是给「新学到的」看的，
+         * 重复出现会被当成又写了一条。 */
+        if (msg.repeated) { break; }
+        addMessage('lesson', '已存入经验记忆：' + (msg.text || '') +
+          (msg.count ? '（共 ' + msg.count + ' 条，可在菜单「经验记忆」里查看或删除）' : ''));
         break;
       case 'snapshot':
         addSnapshotRow(msg.id || '', Array.isArray(msg.files) ? msg.files : []);

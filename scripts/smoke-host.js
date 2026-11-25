@@ -347,7 +347,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.4');
+  assert.strictEqual(info.version, '1.11.5');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -386,9 +386,9 @@ async function main() {
   assert.ok(view.webview.html.indexOf('id="changesbtn"') === -1, 'change-ledger menu button must be removed');
   assert.ok(view.webview.html.indexOf('id="thoughts"') === -1,
     'the top thoughts drawer must be gone (thoughts render inline as segments since 1.9.0)');
-  assert.ok(/src="[^"]*chat\.js\?v=1\.11\.4-\d+"/.test(view.webview.html),
-    'script src must carry a build-stamp query so a same-folder upgrade cannot serve a cached old chat.js (v1.11.4)');
-  assert.ok(/chat\.css\?v=1\.11\.4-\d+/.test(view.webview.html) && /markdown\.js\?v=1\.11\.4-\d+/.test(view.webview.html),
+  assert.ok(/src="[^"]*chat\.js\?v=1\.11\.5-\d+"/.test(view.webview.html),
+    'script src must carry a build-stamp query so a same-folder upgrade cannot serve a cached old chat.js (v1.11.5)');
+  assert.ok(/chat\.css\?v=1\.11\.5-\d+/.test(view.webview.html) && /markdown\.js\?v=1\.11\.5-\d+/.test(view.webview.html),
     'css and markdown loader must carry the build-stamp query too');
   assert.ok(/"repository"[^}]*github\.com\/dugudexiao-qq\/ZSZ\.Win7\.VSCode\.AIAgent/.test(require('fs').readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')),
     'package.json must point at the public repository (marketplace shows the link)');
@@ -543,7 +543,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.4');
+  assert.strictEqual(state.version, '1.11.5');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1001,6 +1001,20 @@ async function main() {
   events.length = 0;
   await viewMessageHandler({ type: 'send', text: '再写一次同名文件' });
   assert.strictEqual(runtime.getLessons().length, 1, 'an unsolved failure must not be memorized');
+
+  /* 上一轮没修好、这一轮才修好：同一个工具的失败必须能接上。小模型很常见
+   * 一次 run 内自愈不了，若失败只存活一轮，多数真实修复都会被丢掉。 */
+  scriptedResponses.length = 0;
+  scriptedResponses.push('{"tool":"createFile","args":{"path":"dup.txt","text":"three","overwrite":true}}');
+  scriptedResponses.push('这次覆盖成功了。');
+  events.length = 0;
+  await viewMessageHandler({ type: 'send', text: '继续，用覆盖方式写 three' });
+  const afterCrossRound = runtime.getLessons();
+  assert.strictEqual(afterCrossRound.length, 1, 'a repeat of the same category must reinforce, not duplicate');
+  assert.ok(afterCrossRound[0].hits >= 2, 'the previous round failure must count as solved: ' + JSON.stringify(afterCrossRound[0]));
+  const repeatNotice = events.filter(function (e) { return e.type === 'lesson'; }).pop();
+  assert.ok(repeatNotice && repeatNotice.repeated === true,
+    'a reinforced lesson must be flagged repeated so the UI does not announce it again');
 
   // 关掉自动学习：同样的「报错→修好」不再新增、也不再提示。
   settings['win7Agent.autoLearn'] = false;

@@ -611,8 +611,55 @@ async function main() {
     assert.ok(list.every(function (it) { return it.text !== 'B'; }), 'oldest entries are dropped first');
   });
 
-  await test('lessons reach the prompt in their own section, never as user rules', function () {
-    const withLessons = rules.compileSystemPrompt({
+  await test('a tool that failed several times keeps every distinct error until it works', function () {
+    const map = new Map();
+    /* 第一次是「没法总结」的错误，第二次才是可总结的。旧实现每个工具只留
+     * 第一条错误，经验就这样被挡掉了——用户看到的正是「跑了好几次、最后
+     * 成功了，经验却没记上」。 */
+    agent.notePendingFix(map, 'createFile', 'TOOL ERROR: ECONNRESET while talking to the gateway', 1);
+    agent.notePendingFix(map, 'createFile', 'TOOL ERROR: a.md already exists; pass overwrite:true', 1);
+    assert.strictEqual(map.get('createFile').length, 2, 'distinct errors must not overwrite each other');
+
+    const fixes = agent.takePendingFixes(map, 'createFile', 1);
+    assert.strictEqual(fixes.length, 2);
+    const ids = fixes
+      .map(function (f) { return lessons.deriveLesson(f); })
+      .filter(Boolean)
+      .map(function (l) { return l.id; });
+    assert.deepStrictEqual(ids, ['overwrite'], 'the summarisable failure must survive even when the first one was noise');
+    assert.strictEqual(map.size, 0, 'taking must clear the tool entry');
+
+    for (let i = 0; i < agent.MAX_PENDING_PER_TOOL + 3; i++) {
+      agent.notePendingFix(map, 'runCommand', 'TOOL ERROR: distinct failure ' + i, 1);
+    }
+    assert.strictEqual(map.get('runCommand').length, agent.MAX_PENDING_PER_TOOL, 'one tool cannot hoard errors');
+  });
+
+  await test('a fix that only lands in a later round is still remembered', function () {
+    const map = new Map();
+    agent.notePendingFix(map, 'saveText', 'TOOL ERROR: ENOENT: no such file or directory', 1);
+    const same = agent.takePendingFixes(map, 'saveText', 2);
+    assert.strictEqual(same.length, 1, 'the same tool succeeding next round must consume the old failure');
+
+    /* 换个话题：别的工具成功不能把上一轮的旧账记成经验。 */
+    agent.notePendingFix(map, 'saveText', 'TOOL ERROR: ENOENT: no such file or directory', 1);
+    assert.strictEqual(agent.takePendingFixes(map, 'readFile', 2).length, 0,
+      'a different tool must not claim a previous round failure');
+
+    /* 同一轮里换工具绕过去：算已解决。 */
+    agent.notePendingFix(map, 'saveText', 'TOOL ERROR: ENOENT: no such file', 2);
+    assert.strictEqual(agent.takePendingFixes(map, 'readFile', 2).length, 1,
+      'a same-round workaround does count as solved');
+  });
+
+  await test('stale failures are dropped instead of resurfacing much later', function () {
+    const map = new Map();
+    agent.notePendingFix(map, 'createFile', 'TOOL ERROR: a.md already exists', 1);
+    agent.prunePendingFixes(map, 1 + agent.PENDING_FIX_TTL_RUNS + 1);
+    assert.strictEqual(map.size, 0, 'a failure older than the TTL must never be learned from');
+  });
+
+  await test('lessons reach the prompt in their own section, never as user rules', function () {    const withLessons = rules.compileSystemPrompt({
       basePrompt: 'base',
       memoryRules: ['注释用中文'],
       lessons: [{ id: 'too-long', text: '单次写入上限 20000 字符：先拆小文件。' }],
