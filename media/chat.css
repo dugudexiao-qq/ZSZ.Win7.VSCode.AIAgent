@@ -194,13 +194,53 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
   border: 1px solid var(--vscode-panel-border, transparent);
 }
 
+/* 用户输入 vs AI 回答：两个方向要一眼分得开。
+ * 用户消息靠右缩进（左侧留白更大）+ 蓝色强调底 + 左竖条；
+ * AI 消息贴左满宽 + 中性底色 + 灰色左竖条。方向相反就不会看串行。 */
 .msg.user {
+  margin-left: 34px;
+  margin-right: 0;
+  padding: 7px 10px 7px 11px;
   background: var(--vscode-input-background);
-  border-color: var(--vscode-input-border, var(--vscode-panel-border, transparent));
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, transparent));
+  border-left: 3px solid var(--vscode-textLink-foreground, #3794ff);
+  border-radius: 6px 2px 2px 6px;
   white-space: pre-wrap;
-  margin-left: 22px;
+  position: relative;
 }
-.msg.assistant { background: transparent; border-color: transparent; padding-left: 4px; padding-right: 4px; }
+/* 说话人标签：不靠颜色也能分辨，色盲/单色主题下同样可读 */
+.msg.user::before,
+.msg.assistant::before {
+  display: block;
+  font-size: 10px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+  margin-bottom: 2px;
+}
+.msg.user::before {
+  content: '你';
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+.msg.assistant {
+  margin-left: 0;
+  margin-right: 24px;
+  background: var(--vscode-textBlockQuote-background, rgba(128, 128, 128, 0.06));
+  border-color: transparent;
+  border-left: 3px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  border-radius: 2px 6px 6px 2px;
+  padding: 6px 10px 6px 11px;
+}
+.msg.assistant::before {
+  content: 'AI';
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+/* 侧边栏被拖窄时缩进要跟着收，否则正文只剩几十像素 */
+@media (max-width: 420px) {
+  .msg.user { margin-left: 16px; }
+  .msg.assistant { margin-right: 12px; }
+}
 /* Completion is signalled by green text alone — no border, no tinted background. */
 .msg.assistant.conclusion-done {
   color: var(--vscode-testing-iconPassed, #89d185);

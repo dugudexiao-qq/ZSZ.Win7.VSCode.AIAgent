@@ -815,6 +815,10 @@
   importBtn.addEventListener('click', function () { vscode.postMessage({ type: 'import' }); });
   exportBtn.addEventListener('click', function () { vscode.postMessage({ type: 'export' }); });
   settingsBtn.addEventListener('click', function () { vscode.postMessage({ type: 'settings' }); });
+  var resetFlagsBtn = document.getElementById('resetFlags');
+  if (resetFlagsBtn) {
+    resetFlagsBtn.addEventListener('click', function () { vscode.postMessage({ type: 'resetFlags' }); });
+  }
   endpointBtn.addEventListener('click', function () { vscode.postMessage({ type: 'endpoint' }); });
   keyState.addEventListener('click', function () {
     // 没配 key 时这个徽标就是唯一显眼的入口：直接弹设置框，而不是先诊断再让人去菜单找。

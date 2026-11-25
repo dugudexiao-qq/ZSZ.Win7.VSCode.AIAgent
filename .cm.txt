@@ -1,0 +1,11 @@
+v1.11.6: distinguish user and AI turns; add runtime-flag reset
+
+- transcript: user bubble indented from the right with a blue left rail and a
+  "你" speaker label; assistant bubble hugs the left with a subtle backdrop,
+  grey rail and an "AI" label; indents shrink on narrow sidebars
+- menu: "运行选项复位为默认" restores read-only + confirmations on + subtask off
+  (upgraded installs kept their old settings, which is why the flag colours
+  looked different from a fresh install)
+- tests: 54 self-tests, 101 audit checks, 19 UI scenarios, host smoke
+- smoke: build-stamp assertion now follows package.json instead of a hardcoded
+  version

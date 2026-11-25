@@ -765,7 +765,7 @@ try {
 
   check('manifest: 1.11.0, no built-in endpoint/model, 21 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.5');
+    assert.strictEqual(manifest.version, '1.11.6');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -810,6 +810,30 @@ try {
     ids.forEach(function (id) {
       assert.ok(manifest.activationEvents.indexOf('onCommand:' + id) !== -1, 'missing activationEvent for ' + id);
     });
+  });
+
+  /* ---- chat transcript look (v1.11.6) ---- */
+
+  check('chat UI: user and AI bubbles are visually distinct; flags can be reset', function () {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.css'), 'utf8');
+    const user = /\.msg\.user\s*\{([\s\S]*?)\}/.exec(css);
+    const assistant = /\.msg\.assistant\s*\{([\s\S]*?)\}/.exec(css);
+    assert.ok(user, 'user bubble rule must exist');
+    assert.ok(assistant, 'assistant bubble rule must exist');
+    assert.ok(/margin-left:\s*\d+px/.test(user[1]), 'user bubble must be indented to the right');
+    assert.ok(/margin-right:\s*\d+px/.test(assistant[1]), 'assistant bubble must be inset from the other side');
+    assert.ok(/border-left:/.test(user[1]) && /border-left:/.test(assistant[1]), 'both sides need a left rail');
+    assert.ok(/::before/.test(css) && /content:\s*'你'/.test(css) && /content:\s*'AI'/.test(css),
+      'speaker labels must not depend on colour alone');
+
+    const view = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
+    assert.ok(/id="resetFlags"/.test(view), 'menu must offer a reset for the runtime flags');
+    assert.ok(/case 'resetFlags':\s*\n\s*return this\._resetFlags\(\)/.test(view), 'resetFlags must be handled');
+    const reset = /async _resetFlags\(\)\s*\{([\s\S]*?)\n  \}/.exec(view);
+    assert.ok(reset, '_resetFlags must exist');
+    assert.ok(/setWriteMode\(false\)/.test(reset[1]) && /setWriteConfirm\(true\)/.test(reset[1]) &&
+      /setShellConfirm\(true\)/.test(reset[1]) && /setSubtaskMode\(false\)/.test(reset[1]),
+      'reset must restore the shipped defaults');
   });
 
   console.log('\nAll ' + passed + ' self-tests passed.');

@@ -295,6 +295,7 @@ class ChatViewProvider {
           '<button id="panelbtn" class="menu-item" title="在编辑器区域打开独立聊天窗">在新面板打开</button>' +
           '<button id="endpoint" class="menu-item" title="设置服务地址 / 端口">服务地址 / 端口</button>' +
           '<button id="settings" class="menu-item" title="打开插件设置">插件设置</button>' +
+          '<button id="resetFlags" class="menu-item" title="把写入/确认/子任务四项恢复为默认（只读·写入确认开·命令确认开·子任务关）">运行选项复位为默认</button>' +
         '</div>' +
         /* 4 个运行开关：文字写清状态（只读/可写、开/关），不用图标——
          * 图标要额外记住含义，文字直接可读。放在标题下方第二行，
@@ -482,6 +483,17 @@ class ChatViewProvider {
     else { this._post(msg, false); }
   }
 
+  /* 四个运行开关存在 settings.json 里，升级插件不会重置：老用户看到的颜色和
+   * 全新安装不同，是开关值不同（黄=确认已关，蓝=可写），不是样式坏了。
+   * 给一次「回到默认」，省得逐个点回去。 */
+  async _resetFlags() {
+    await runtime.setWriteMode(false);
+    await runtime.setWriteConfirm(true);
+    await runtime.setShellConfirm(true);
+    await runtime.setSubtaskMode(false);
+    await this.postState();
+  }
+
   /* A reopened sidebar/panel must still show what is attached. */
   _postAttachments(entry) {
     if (!this._attachments.length) { return; }
@@ -557,6 +569,11 @@ class ChatViewProvider {
       case 'subtaskMode':
         vscode.commands.executeCommand('win7Agent.toggleSubtaskMode');
         break;
+      /* 四项运行开关存在 settings.json 里，升级插件不会重置。老用户看到的
+       * 颜色和全新安装不同，是因为开关本身还是旧值（黄色=确认已关，蓝色=
+       * 可写）。这里给一次「回到默认」，比逐个点回去省事。 */
+      case 'resetFlags':
+        return this._resetFlags();
       case 'openPanel':
         vscode.commands.executeCommand('win7Agent.openChatPanel');
         break;
