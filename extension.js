@@ -14,6 +14,7 @@ const fileImport = require('./src/fileImport');
 const rules = require('./src/rules');
 const lessonsLib = require('./src/lessons');
 const endpoint = require('./src/endpoint');
+const settingsAudit = require('./src/settingsAudit');
 
 const APP = manifest.displayName;
 const EXT_ID = manifest.publisher + '.' + manifest.name;
@@ -81,6 +82,44 @@ function scanExtensionConflicts() {
   return lines;
 }
 
+/* 启动时的设置体检。只提醒、不擅自改：除了明确废弃的键（allowWrite，由
+ * migrateLegacyWriteSwitch 处理），其余一律要用户点一下才清。 */
+function checkStaleSettings(ctx) {
+  let r;
+  try {
+    r = settingsAudit.audit(ctx);
+  } catch (e) {
+    runtime.log('settings audit skipped: ' + (e && e.message ? e.message : e));
+    return;
+  }
+  if (!settingsAudit.hasIssues(r)) { return; }
+  runtime.log('settings audit: retired=' + r.retired.length + ' unknown=' + r.unknown.length +
+    ' legacyDefault=' + r.legacy.length + ' otherVersions=' + r.siblings.map(function (s) { return s.version; }).join(','));
+  /* 一个版本只提醒一次，避免每次启动都弹。 */
+  const ackKey = 'settingsAuditAck';
+  if (ctx.globalState.get(ackKey) === runtime.getExtensionInfo().version) { return; }
+  const bits = [];
+  if (r.retired.length) { bits.push(r.retired.length + ' 项已废弃'); }
+  if (r.unknown.length) { bits.push(r.unknown.length + ' 项本版本不认识'); }
+  if (r.legacy.length) { bits.push(r.legacy.length + ' 项仍是旧版默认值'); }
+  if (r.siblings.length) { bits.push(r.siblings.length + ' 个旧版本还留在扩展目录'); }
+  vscode.window.showWarningMessage(
+    APP + '：设置里有旧版本残留（' + bits.join('，') + '），可能压住新版默认值。',
+    '查看报告', '清理废弃/无效键', '忽略'
+  ).then(async function (pick) {
+    if (pick === '清理废弃/无效键') {
+      const res = await settingsAudit.cleanup(ctx, { unknown: true });
+      await ctx.globalState.update(ackKey, runtime.getExtensionInfo().version);
+      vscode.window.showInformationMessage(APP + '：已清理 ' + res.removed.length + ' 项' +
+        (res.failed.length ? '，失败 ' + res.failed.length + ' 项（详见输出面板）' : '') + '。');
+      res.failed.forEach(function (line) { runtime.log('settings cleanup failed: ' + line); });
+      return;
+    }
+    if (pick === '查看报告') { await settingsAudit.showReport(ctx); return; }
+    await ctx.globalState.update(ackKey, runtime.getExtensionInfo().version);
+  });
+}
+
 function activate(context) {
   runtime.initRuntime(context);
   const info = runtime.getExtensionInfo();
@@ -99,6 +138,11 @@ function activate(context) {
 
   provider = new ChatViewProvider(context.extensionUri);
   function refresh() { return provider.postState(); }
+
+  /* 设置体检：同一个扩展 ID 装过多个版本、或曾经装过同名增强版时，旧版的键会
+   * 一直躺在 settings.json 里；更隐蔽的是旧版内置默认值被写进用户设置，长期压住
+   * 新版默认值。启动时查一次，只在发现新情况时提醒一次（按版本记，不反复打扰）。 */
+  checkStaleSettings(context);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
@@ -519,6 +563,60 @@ function activate(context) {
     })
   );
 
+  /* ---- 设置体检：旧版本/同名插件留下的键，一键看清、按需清掉 ---- */
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('win7Agent.auditSettings', async function () {
+      const r = await settingsAudit.showReport(context);
+      if (!settingsAudit.hasIssues(r)) {
+        vscode.window.showInformationMessage(APP + '：设置很干净，没有旧版本残留。');
+        return;
+      }
+      const items = [];
+      if (r.retired.length) {
+        items.push({ label: '清理已废弃的键（' + r.retired.length + ' 项）', description: r.retired.map(function (i) { return i.key; }).join('、'), action: 'retired' });
+      }
+      if (r.unknown.length) {
+        items.push({ label: '清理本版本不认识的键（' + r.unknown.length + ' 项）', description: r.unknown.map(function (i) { return i.key; }).join('、'), action: 'unknown' });
+      }
+      if (r.legacy.length) {
+        items.push({ label: '删掉仍是旧版默认值的项（' + r.legacy.length + ' 项，恢复当前默认）', description: r.legacy.map(function (i) { return i.key; }).join('、'), action: 'legacy' });
+      }
+      if (r.siblings.length) {
+        items.push({ label: '旧版本仍留在扩展目录（' + r.siblings.length + ' 个）', description: r.siblings.map(function (s) { return s.version; }).join('、') + '（VS Code 退出后手动删）', action: 'siblings' });
+      }
+      items.push({ label: '只看报告，不改任何东西', action: 'none' });
+      const pick = await vscode.window.showQuickPick(items, { placeHolder: '要清哪一类？清理后相关设置会回到当前版本的默认值' });
+      if (!pick || pick.action === 'none') { return; }
+
+      if (pick.action === 'siblings') {
+        const list = r.siblings.map(function (s) { return s.path; }).join('\n');
+        const open = await vscode.window.showWarningMessage(
+          APP + '：这些旧版本目录要关掉 VS Code 之后才能删除。删之前请确认里面没有你手改过的文件。',
+          '打开扩展目录', '复制路径'
+        );
+        if (open === '复制路径') { await vscode.env.clipboard.writeText(list); }
+        if (open === '打开扩展目录') {
+          await vscode.env.openExternal(vscode.Uri.file(path.dirname(r.siblings[0].path)));
+        }
+        return;
+      }
+
+      const res = await settingsAudit.cleanup(context, {
+        retired: pick.action === 'retired',
+        unknown: pick.action === 'unknown',
+        legacy: pick.action === 'legacy'
+      });
+      res.failed.forEach(function (line) { runtime.log('settings cleanup failed: ' + line); });
+      if (res.removed.length) {
+        vscode.window.showInformationMessage(APP + '：已清理 ' + res.removed.length + ' 项设置' +
+          (res.failed.length ? '，另有 ' + res.failed.length + ' 项失败（见输出面板）' : '') + '。');
+      } else {
+        vscode.window.showWarningMessage(APP + '：没有清理成功' + (res.failed.length ? '（' + res.failed[0] + '）' : '') + '。');
+      }
+    })
+  );
+
   /* ---- diagnostics bundle: one file a user can send back ---- */
 
   context.subscriptions.push(
@@ -556,6 +654,13 @@ function activate(context) {
       lines.push('');
       lines.push('--- 扩展冲突扫描 ---');
       scanExtensionConflicts().forEach(function (line) { lines.push(line); });
+      lines.push('');
+      lines.push('--- 设置体检（旧版本/同名插件残留） ---');
+      try {
+        settingsAudit.report(settingsAudit.audit(context)).split('\n').forEach(function (line) { lines.push(line); });
+      } catch (e) {
+        lines.push('体检失败：' + (e && e.message ? e.message : e));
+      }
       lines.push('');
       lines.push('--- 最近日志（最多 300 行） ---');
       runtime.getLogLines(300).forEach(function (line) { lines.push(line); });

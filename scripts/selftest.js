@@ -6,6 +6,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
 const { createSseDecoder, buildRequestOptions, isLocalEndpoint, classifyError, extractReasoning } = require('../src/llmClient');
@@ -785,9 +786,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.11.13, no built-in endpoint/model, 21 commands, all activation events', function () {
+  check('manifest: 1.11.14, no built-in endpoint/model, 22 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.13');
+    assert.strictEqual(manifest.version, '1.11.14');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -820,7 +821,7 @@ try {
     assert.strictEqual(props['win7Agent.constraints.deniedTools'].default.indexOf('runCommand'), -1, 'runCommand must not be blacklisted by default');
     const factoryRules = props['win7Agent.defaultRules'].default.join('\n');
     assert.ok(!/不修改任何文件|默认只做解释和建议/.test(factoryRules), 'factory rules must NOT forbid writing files');
-    assert.strictEqual(manifest.contributes.commands.length, 21);
+    assert.strictEqual(manifest.contributes.commands.length, 22);
     const ids = manifest.contributes.commands.map(function (c) { return c.command; });
     assert.ok(ids.indexOf('win7Agent.switchProfile') !== -1, 'model-profile switcher command must exist');
     assert.ok(ids.indexOf('win7Agent.toggleShellConfirm') !== -1, 'shell-confirmation toggle command must exist');
@@ -911,6 +912,64 @@ try {
     const chat = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
     assert.ok(/attachEl\.hidden = attachments\.length === 0/.test(chat),
       'empty list must hide the attachment bar');
+  });
+
+  /* v1.11.14: 设置体检——旧版本/同名插件留下的键要能被认出来，且不能误伤正常键。 */
+  check('settings audit tells stale keys apart from our own', function () {
+    const audit = require('../src/settingsAudit');
+    /* JSONC：settings.json 里常有注释和尾逗号，解析不能炸。 */
+    const parsed = JSON.parse(audit.stripJsonc([
+      '{',
+      '  // 用户注释',
+      '  "win7Agent.model": "m",',
+      '  /* 块注释 */',
+      '  "win7Agent.list": [1, 2,],',
+      '}'
+    ].join('\n')));
+    assert.strictEqual(parsed['win7Agent.model'], 'm');
+    assert.deepStrictEqual(parsed['win7Agent.list'], [1, 2], 'trailing comma must be tolerated');
+
+    const schema = audit.schemaKeys();
+    assert.ok(schema.indexOf('constraints.readOnly') !== -1, 'schema keys must come from package.json');
+    assert.ok(audit.RETIRED_KEYS.allowWrite, 'allowWrite must stay in the retired list');
+
+    const sample = {
+      'win7Agent.model': 'deepseek-flash',
+      'win7Agent.allowWrite': false,
+      'win7Agent.oldKnob': 1,
+      'win7Agent.systemPrompt': audit.LEGACY_DEFAULTS.systemPrompt[0],
+      'editor.fontSize': 14
+    };
+    const c = audit.classify(sample, schema, audit.RETIRED_KEYS, audit.LEGACY_DEFAULTS);
+    assert.deepStrictEqual(c.retired.map(function (i) { return i.key; }), ['win7Agent.allowWrite']);
+    assert.deepStrictEqual(c.unknown.map(function (i) { return i.key; }), ['win7Agent.oldKnob'],
+      'only keys we no longer define may be flagged as unknown');
+    assert.deepStrictEqual(c.legacy.map(function (i) { return i.key; }), ['win7Agent.systemPrompt'],
+      'a value copied from an old default must be reported');
+    assert.ok(!c.unknown.some(function (i) { return i.key === 'win7Agent.model'; }), 'live keys must never be flagged');
+
+    /* 每个键在 package.json 里都必须真实存在，否则体检会把它当「不认识」。 */
+    const props = manifest.contributes.configuration.properties;
+    assert.strictEqual(schema.length, Object.keys(props).length);
+  });
+
+  /* 旧版本目录要能被点出来（VS Code 只启用一个，但旧 package.json 的默认值会被合并）。 */
+  check('settings audit lists older copies of this extension on disk', function () {
+    const audit = require('../src/settingsAudit');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zsz-exts-'));
+    const id = manifest.publisher + '.' + manifest.name;
+    const active = path.join(root, id + '-' + manifest.version);
+    fs.mkdirSync(active);
+    fs.mkdirSync(path.join(root, id + '-0.3.12'));
+    fs.mkdirSync(path.join(root, 'someone.else-1.0.0'));
+    try {
+      const list = audit.siblingVersions({ extensionPath: active });
+      assert.strictEqual(list.length, 1, 'exactly one older copy must be reported');
+      assert.strictEqual(list[0].version, '0.3.12');
+      assert.ok(/0\.3\.12$/.test(list[0].path));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   console.log('\nAll ' + passed + ' self-tests passed.');

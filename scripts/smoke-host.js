@@ -272,7 +272,7 @@ async function main() {
   const ext = require('../extension');
   await ext.activate(context);
 
-  assert.strictEqual(Object.keys(commands).length, 21, 'all 21 commands must be registered');
+  assert.strictEqual(Object.keys(commands).length, 22, 'all 22 commands must be registered');
   assert.ok(registeredProvider, 'webview provider must be registered');
   assert.ok(commands['win7Agent.toggleWriteMode'], 'write-mode toggle must be registered');
   assert.ok(commands['win7Agent.toggleShellConfirm'], 'shell-confirmation toggle must be registered');
@@ -284,7 +284,7 @@ async function main() {
   });
   assert.ok(commands['win7Agent.manageLessons'], 'auto-lesson manager command must be registered');
   assert.ok(commands['win7Agent.switchProfile'], 'model-profile switcher command must be registered (v1.11.4)');
-  console.log('  PASS  activate() registered 21 commands and the webview provider');
+  console.log('  PASS  activate() registered 22 commands and the webview provider');
   
 
   const runtime = require('../src/runtime');
@@ -347,7 +347,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.13');
+  assert.strictEqual(info.version, '1.11.14');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -546,7 +546,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.13');
+  assert.strictEqual(state.version, '1.11.14');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1348,6 +1348,57 @@ async function main() {
   assert.ok(/TOOL RESULT\|STATUS:/.test(fs.readFileSync(path.join(__dirname, '..', 'src', 'agent.js'), 'utf8')),
     'agent must detect fake tool transcripts in a run with zero executions');
   console.log('  PASS  fabricated tool transcripts are forbidden and detected');
+
+  /* v1.11.14：设置体检要能从真实 settings.json 里认出旧版本残留，并且清理时只删
+   * 用户点过的那一类。这里用临时目录造一份「被 0.3.12 污染过」的设置来跑。 */
+  {
+    const os = require('os');
+    const settingsAudit = require('../src/settingsAudit');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zsz-settings-'));
+    const id = require('../package.json').publisher + '.' + require('../package.json').name;
+    const userDir = path.join(root, 'User');
+    const extRoot = path.join(root, 'extensions');
+    const active = path.join(extRoot, id + '-1.11.14');
+    fs.mkdirSync(path.join(userDir, 'globalStorage', id), { recursive: true });
+    fs.mkdirSync(active, { recursive: true });
+    fs.mkdirSync(path.join(extRoot, id + '-0.3.12'), { recursive: true });
+    fs.writeFileSync(path.join(userDir, 'settings.json'), [
+      '{',
+      '  // 旧版本留下的',
+      '  "win7Agent.allowWrite": false,',
+      '  "win7Agent.localOnlyKnob": true,',
+      '  "win7Agent.systemPrompt": ' + JSON.stringify(settingsAudit.LEGACY_DEFAULTS.systemPrompt[0]) + ',',
+      '  "win7Agent.model": "deepseek-flash"',
+      '}'
+    ].join('\n'), 'utf8');
+
+    const ctx = {
+      extensionPath: active,
+      globalStorageUri: { fsPath: path.join(userDir, 'globalStorage', id) }
+    };
+    const r = settingsAudit.audit(ctx);
+    assert.strictEqual(r.retired.length, 1, 'retired allowWrite must be found in a real settings.json');
+    assert.strictEqual(r.retired[0].key, 'win7Agent.allowWrite');
+    assert.strictEqual(r.unknown.length, 1, 'the key nobody defines any more must be found');
+    assert.strictEqual(r.unknown[0].key, 'win7Agent.localOnlyKnob');
+    assert.strictEqual(r.legacy.length, 1, 'a value copied from the 0.3.12 default must be flagged');
+    assert.strictEqual(r.siblings.length, 1, 'the leftover 0.3.12 folder must be listed');
+    assert.strictEqual(r.siblings[0].version, '0.3.12');
+    assert.ok(/设置体检报告/.test(settingsAudit.report(r)) && /0\.3\.12/.test(settingsAudit.report(r)),
+      'the report must be readable text that names the offending version');
+
+    /* 清理：只清「不认识的键」，且不能顺手删掉正常键的值。 */
+    settings['win7Agent.model'] = 'deepseek-flash';
+    settings['win7Agent.localOnlyKnob'] = true;
+    const res = await settingsAudit.cleanup(ctx, { retired: false, unknown: true });
+    assert.strictEqual(res.removed.length, 1, 'only the unknown key may be removed');
+    assert.strictEqual(settings['win7Agent.localOnlyKnob'], undefined, 'unknown key must be gone from settings');
+    assert.strictEqual(settings['win7Agent.model'], 'deepseek-flash', 'live settings must survive the cleanup');
+    assert.strictEqual(typeof commands['win7Agent.auditSettings'], 'function',
+      'the audit must be reachable from the command palette');
+    fs.rmSync(root, { recursive: true, force: true });
+    console.log('  PASS  settings audit finds stale keys/old defaults/old versions and cleans only what was asked');
+  }
 
   ext.deactivate();
   Module._load = originalLoad;

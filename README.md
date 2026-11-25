@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.11.13-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.11.14-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -72,9 +72,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.13** 的附件 `zsz-win7-vscode-aiagent-1.11.13.vsix`（约 184 KB）
-   （直链：[Releases/download/v1.11.13](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.13/zsz-win7-vscode-aiagent-1.11.13.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.13.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.14** 的附件 `zsz-win7-vscode-aiagent-1.11.14.vsix`（约 190 KB）
+   （直链：[Releases/download/v1.11.14](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.14/zsz-win7-vscode-aiagent-1.11.14.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.14.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
@@ -135,6 +135,7 @@
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.11.14**：新增「检查设置（旧版本/同名插件残留）」命令。会去看 `settings.json` 里三类东西：已废弃、当前版本不认识的键、值还等于旧版内置默认值的项；另外扫描扩展目录里同一 ID 的其它版本目录（VS Code 只启用一个，但旧版的默认值会被合并进设置界面）。启动时只在发现新情况时提醒一次，清理必须你点一下才执行，绝不擅自改配置。
 - **v1.11.13**：导入的文件在消息发出后就从输入框上方消失。之前那排「已导入 (n)」标签会一直挂着，回答完了还在，看着像附件没发出去、或者下一次还要重发一遍。文件内容其实在导入那一刻就已经进了对话历史，标签只是临时提示，发出去即收起（对话记录里仍留一行「已导入文件」）。
 - **v1.11.12**：扩展详情页加了 4 张自绘示意图（SVG，随包分发、不联网加载）：任务执行循环、三层记忆、安全门禁、模型可替换。新装用户不用读一堆条目就能看懂它到底能做什么；自测里加了断链检查，图片路径或打包白名单出问题会直接失败。
 - **v1.11.11**：写入开关收敛成两道门。删掉冗余的 `win7Agent.allowWrite`——它和 `constraints.readOnly` 永远同进同退，从不独立生效，只在设置界面里制造「勾了却不能写」的困惑；现在写入只由 `constraints.readOnly` 与 `constraints.deniedTools` 决定。升级时自动清理旧键，且若旧值是 `allowWrite=false` 会补上 `readOnly=true`，保证不会因为删掉它而意外放开写入。

@@ -2,7 +2,7 @@
   "name": "win7-ai-agent",
   "displayName": "ZSZ.Win7.VSCode.AIAgent",
   "description": "适用于 Windows 7 + VS Code 1.70.x 的本地大模型 AI Agent。",
-  "version": "1.11.13",
+  "version": "1.11.14",
   "publisher": "dugudexiao",
   "icon": "media/icon.png",
   "author": {
@@ -60,7 +60,8 @@
     "onCommand:win7Agent.showPrompt",
     "onCommand:win7Agent.importFile",
     "onCommand:win7Agent.exportAnswer",
-    "onCommand:win7Agent.exportDiagnostics"
+    "onCommand:win7Agent.exportDiagnostics",
+    "onCommand:win7Agent.auditSettings"
   ],
   "contributes": {
     "commands": [
@@ -167,6 +168,11 @@
       {
         "command": "win7Agent.exportDiagnostics",
         "title": "导出诊断包 (Export Diagnostics)",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
+        "command": "win7Agent.auditSettings",
+        "title": "检查设置（旧版本/同名插件残留）",
         "category": "ZSZ.Win7.VSCode.AIAgent"
       }
     ],
