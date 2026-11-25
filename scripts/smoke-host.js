@@ -283,7 +283,7 @@ async function main() {
     assert.ok(!commands[id], 'change-ledger command must be unregistered: ' + id);
   });
   assert.ok(commands['win7Agent.manageLessons'], 'auto-lesson manager command must be registered');
-  assert.ok(commands['win7Agent.switchProfile'], 'model-profile switcher command must be registered (v1.11.2)');
+  assert.ok(commands['win7Agent.switchProfile'], 'model-profile switcher command must be registered (v1.11.3)');
   console.log('  PASS  activate() registered 21 commands and the webview provider');
   
 
@@ -347,7 +347,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.2');
+  assert.strictEqual(info.version, '1.11.3');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -386,9 +386,9 @@ async function main() {
   assert.ok(view.webview.html.indexOf('id="changesbtn"') === -1, 'change-ledger menu button must be removed');
   assert.ok(view.webview.html.indexOf('id="thoughts"') === -1,
     'the top thoughts drawer must be gone (thoughts render inline as segments since 1.9.0)');
-  assert.ok(/src="[^"]*chat\.js\?v=1\.11\.2-\d+"/.test(view.webview.html),
-    'script src must carry a build-stamp query so a same-folder upgrade cannot serve a cached old chat.js (v1.11.2)');
-  assert.ok(/chat\.css\?v=1\.11\.2-\d+/.test(view.webview.html) && /markdown\.js\?v=1\.11\.2-\d+/.test(view.webview.html),
+  assert.ok(/src="[^"]*chat\.js\?v=1\.11\.3-\d+"/.test(view.webview.html),
+    'script src must carry a build-stamp query so a same-folder upgrade cannot serve a cached old chat.js (v1.11.3)');
+  assert.ok(/chat\.css\?v=1\.11\.3-\d+/.test(view.webview.html) && /markdown\.js\?v=1\.11\.3-\d+/.test(view.webview.html),
     'css and markdown loader must carry the build-stamp query too');
   assert.ok(/"repository"[^}]*gitcode\.com\/dugudexiao\/zsz\.Win7\.AIAgent/.test(require('fs').readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')),
     'package.json must point at the public repository (marketplace shows the link)');
@@ -537,7 +537,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.2');
+  assert.strictEqual(state.version, '1.11.3');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1041,8 +1041,10 @@ async function main() {
   settings['win7Agent.baseUrl'] = 'http://127.0.0.1:' + port + '/v1';
   events.length = 0;
   scriptedResponses.length = 0;
-  // v1.6.0: a "talked but did nothing" round is retried once automatically, so
-  // the mock has to keep claiming completion twice before the run gives up.
+  // v1.11.3: a "talked but did nothing" round is retried up to twice
+  // automatically, so the mock has to keep claiming completion three times
+  // before the run gives up.
+  scriptedResponses.push('已完成，工作区所有文件都复制到 backup 目录了。');
   scriptedResponses.push('已完成，工作区所有文件都复制到 backup 目录了。');
   scriptedResponses.push('已完成，工作区所有文件都复制到 backup 目录了。');
   await viewMessageHandler({ type: 'send', text: '帮我把工作区文件复制到 backup' });

@@ -517,6 +517,29 @@ try {
     assert.strictEqual(readOnly.wantsWrite, false);
   });
 
+  check('taskCheck: a pasted error log counts as a task, not small talk', function () {
+    // 用户把网页错误响应贴进来：正文没有动作动词，原来会被判成纯问答，
+    // 模型只回一段分析就“完成”。长内容默认按任务处理。
+    const log = 'HTTP/1.1 500 Internal Server Error\n' +
+      '<html><body><h1>服务器内部错误</h1></body></html>\n' +
+      'at com.example.DispatcherServlet.invoke(DispatcherServlet.java:99)\n' +
+      'java.lang.NullPointerException: config must not be null\n' +
+      '    ... 42 more frames\n'.repeat(12);
+    const pasted = taskCheck.detectIntent(log);
+    assert.ok(pasted.pasted, 'long paste must be flagged');
+    assert.strictEqual(pasted.wantsAction, true, 'a pasted log is a work request');
+    // 日志正文里偶然出现“是否/为什么”不能把整条消息拖回纯问答
+    const noisy = log.replace('服务器内部错误', '请确认配置是否正确后再试');
+    assert.strictEqual(taskCheck.detectIntent(noisy).wantsAction, true,
+      'question words inside the pasted body must not suppress the task intent');
+    // 明确提问仍然优先：贴日志 + 结尾问句 = 纯问答
+    const asked = taskCheck.detectIntent(log + '\n这是什么原因？');
+    assert.strictEqual(asked.wantsAction, false, 'an explicit question stays Q&A');
+    // 开头带疑问词也算提问
+    const askedHead = taskCheck.detectIntent('为什么会出现这个错误？\n' + log);
+    assert.strictEqual(askedHead.wantsAction, false, 'a leading question stays Q&A');
+  });
+
   check('taskCheck: "已完成" with zero tool calls is a false claim', function () {
     const r = taskCheck.evaluate({
       userText: '帮我把这些文件复制到 backup',
@@ -742,7 +765,7 @@ try {
 
   check('manifest: 1.11.0, no built-in endpoint/model, 21 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.2');
+    assert.strictEqual(manifest.version, '1.11.3');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');

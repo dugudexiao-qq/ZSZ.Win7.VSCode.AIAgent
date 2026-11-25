@@ -62,25 +62,41 @@ function hit(text, words) {
   return found;
 }
 
-/* 只看最后一条用户消息：导入文件会把整篇文件内容压成一条 user 消息，
- * 拿全部历史做匹配会把"纯问答"误判成"要动手"。
- *
- * "怎么写这个函数"这类问句不该被当成任务：命中疑问词、又没有任何祈使说法时
- * 判为纯问答。反过来"能帮我写进 a.js 吗"有祈使说法，仍按任务处理。 */
+/* 粘贴长内容的判定阈值。贴一大段错误日志 / 报错页面 / 代码进来的用户，
+ * 几乎从不是在闲聊——但日志正文里往往没有"修复/创建"这类动词，按关键词
+ * 匹配会被误判成纯问答，模型只回一段分析就"完成"了。 */
+var PASTE_MIN_CHARS = 400;
+
+/* 长内容下疑问意图只认两种明确形态：结尾问号、整条消息以疑问词开头。
+ * 粘贴正文（无论开头还是中间）偶然出现"是否/为什么"不再把整条消息拖回
+ * 纯问答——把任务误判成闲聊的代价（模型只回分析就"完成"）远高于反过来。 */
+function looksLikeQuestion(text) {
+  if (/[?？]\s*$/.test(text)) { return true; }
+  var t = String(text).replace(/^\s+/, '');
+  for (var i = 0; i < QUESTION_WORDS.length; i++) {
+    if (t.indexOf(QUESTION_WORDS[i]) === 0) { return true; }
+  }
+  return false;
+}
+
 function detectIntent(userText) {
   var text = String(userText || '');
   var action = hit(text, ACTION_WORDS);
   var write = hit(text, WRITE_WORDS);
   var question = hit(text, QUESTION_WORDS);
   var imperative = hit(text, IMPERATIVE_WORDS);
+  var pasted = text.length >= PASTE_MIN_CHARS;
+  var isQuestion = pasted ? looksLikeQuestion(text) : (question.length > 0 || /[?？]\s*$/.test(text));
   var wantsAction = action.length > 0;
-  if (wantsAction && question.length && !imperative.length) { wantsAction = false; }
+  if (!wantsAction && pasted && !isQuestion) { wantsAction = true; }
+  if (wantsAction && isQuestion && !imperative.length) { wantsAction = false; }
   return {
     wantsAction: wantsAction,
     wantsWrite: wantsAction && write.length > 0,
     actionWords: action,
     writeWords: write,
-    question: question.length > 0 || /[?？]\s*$/.test(text)
+    question: isQuestion,
+    pasted: pasted
   };
 }
 

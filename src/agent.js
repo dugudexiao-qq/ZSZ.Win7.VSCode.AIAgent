@@ -37,7 +37,7 @@ const DEFAULT_MAX_CONTEXT_CHARS = 8000;
  * sees text appear, while the tool loop keeps working. */
 const STREAM_CHUNK_CHARS = 24;
 const STREAM_CHUNK_DELAY_MS = 12;
-const AUTO_RETRY_MAX = 1;
+const AUTO_RETRY_MAX = 2;
 /* Degraded tool-call templates (invoke open tag missing, only a parameter
  * tag and a lone closing tag left) carry no tool name, so they cannot be
  * executed. Instead of dumping the raw template into the chat we feed a
@@ -863,6 +863,27 @@ async function runAgent(params) {
           ? (stripToolTemplateFragments(visible) || '（模型输出的调用模板不完整，已忽略。可重试或直接描述需求。）')
           : visible;
         answer = shown;
+        /* Empty-but-thinking replies: the model spent everything inside its
+         * thinking block and produced neither prose nor a tool call. Ending
+         * the run here looks like a silent success ("已完成" with nothing in
+         * the transcript) — nudge it back to work instead. */
+        if (!String(shown || '').trim()) {
+          if (autoRetries < AUTO_RETRY_MAX && round < config.maxToolRounds) {
+            autoRetries += 1;
+            phase('本轮没有正文，已要求模型继续');
+            emit({ type: 'notice', text: '模型本轮只有思考过程，没有正文也没有工具调用，已自动要求继续' });
+            convo.push({ role: 'assistant', content: content });
+            convo.push({
+              role: 'user',
+              content: 'EMPTY REPLY: 你上一条回复没有可显示的正文，也没有工具调用。请直接推进任务：要么调用工具完成下一步，要么给出明确结论。不要把全部输出放进思考过程。'
+            });
+            continue;
+          }
+          emit({ type: 'notice', text: '⚠ 模型多轮只输出思考过程，没有正文也没有工具调用，已按空回复结束。可换用能力更强的模型或重试。' });
+          phase('完成（空回复）');
+          emitCheck(emit, config, depth, userText, visible, trace);
+          return '';
+        }
         /* 伪造执行记录的检测：本轮一次工具都没真跑，正文却出现工具输出的
          * 样子（TOOL RESULT / STATUS: OK …），基本是模型在自编执行过程。
          * 只提示，不改正文——用户据此判断「文件到底有没有被改动」。 */
@@ -878,7 +899,7 @@ async function runAgent(params) {
         const verdictInfo = evaluateCheck(config, depth, userText, visible, trace);
         if (autoRetries < AUTO_RETRY_MAX && needsAutoRetry(verdictInfo)) {
           autoRetries += 1;
-          emit({ type: 'notice', text: '这一轮没有实际动作，已自动要求重做一次（仅一次）' });
+          emit({ type: 'notice', text: '这一轮没有实际动作，已自动要求重做（最多 ' + AUTO_RETRY_MAX + ' 次）' });
           convo.push({ role: 'assistant', content: content });
           convo.push({
             role: 'user',
