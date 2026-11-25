@@ -283,7 +283,7 @@ async function main() {
     assert.ok(!commands[id], 'change-ledger command must be unregistered: ' + id);
   });
   assert.ok(commands['win7Agent.manageLessons'], 'auto-lesson manager command must be registered');
-  assert.ok(commands['win7Agent.switchProfile'], 'model-profile switcher command must be registered (v1.11.3)');
+  assert.ok(commands['win7Agent.switchProfile'], 'model-profile switcher command must be registered (v1.11.4)');
   console.log('  PASS  activate() registered 21 commands and the webview provider');
   
 
@@ -347,7 +347,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.3');
+  assert.strictEqual(info.version, '1.11.4');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -386,9 +386,9 @@ async function main() {
   assert.ok(view.webview.html.indexOf('id="changesbtn"') === -1, 'change-ledger menu button must be removed');
   assert.ok(view.webview.html.indexOf('id="thoughts"') === -1,
     'the top thoughts drawer must be gone (thoughts render inline as segments since 1.9.0)');
-  assert.ok(/src="[^"]*chat\.js\?v=1\.11\.3-\d+"/.test(view.webview.html),
-    'script src must carry a build-stamp query so a same-folder upgrade cannot serve a cached old chat.js (v1.11.3)');
-  assert.ok(/chat\.css\?v=1\.11\.3-\d+/.test(view.webview.html) && /markdown\.js\?v=1\.11\.3-\d+/.test(view.webview.html),
+  assert.ok(/src="[^"]*chat\.js\?v=1\.11\.4-\d+"/.test(view.webview.html),
+    'script src must carry a build-stamp query so a same-folder upgrade cannot serve a cached old chat.js (v1.11.4)');
+  assert.ok(/chat\.css\?v=1\.11\.4-\d+/.test(view.webview.html) && /markdown\.js\?v=1\.11\.4-\d+/.test(view.webview.html),
     'css and markdown loader must carry the build-stamp query too');
   assert.ok(/"repository"[^}]*gitcode\.com\/dugudexiao\/zsz\.Win7\.AIAgent/.test(require('fs').readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')),
     'package.json must point at the public repository (marketplace shows the link)');
@@ -435,6 +435,9 @@ async function main() {
   assert.strictEqual(switched.activeId, olderId, 'switch must move the active session');
   assert.strictEqual(registeredProvider._history, registeredProvider._findSession(olderId).history,
     '_history must follow the active session');
+  const replayMsg = sessionOf('replay');
+  assert.ok(replayMsg && Array.isArray(replayMsg.items),
+    'switching sessions must replay the persisted history into the webview (v1.11.4), or the panel looks empty');
   await new Promise(function (r) { setTimeout(r, 20); });
   assert.ok(globalStore['win7Agent.sessions'], 'sessions must be persisted to globalState');
 
@@ -459,6 +462,9 @@ async function main() {
   assert.strictEqual(registeredProvider._history,
     registeredProvider._findSession(afterActiveDel.activeId).history,
     'history must follow the surviving active conversation');
+  const delReplay = sessionOf('replay');
+  assert.ok(delReplay && Array.isArray(delReplay.items),
+    'deleting the active conversation must replay the surviving history');
   console.log('  PASS  conversations: new session, switch back, delete (idle + active), histories stay separate');
 
   const fs = require('fs');
@@ -537,7 +543,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.3');
+  assert.strictEqual(state.version, '1.11.4');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1041,7 +1047,7 @@ async function main() {
   settings['win7Agent.baseUrl'] = 'http://127.0.0.1:' + port + '/v1';
   events.length = 0;
   scriptedResponses.length = 0;
-  // v1.11.3: a "talked but did nothing" round is retried up to twice
+  // v1.11.4: a "talked but did nothing" round is retried up to twice
   // automatically, so the mock has to keep claiming completion three times
   // before the run gives up.
   scriptedResponses.push('已完成，工作区所有文件都复制到 backup 目录了。');

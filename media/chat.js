@@ -1277,6 +1277,20 @@
         var fileEl = addMessage('file', msg.text || '已导入文件');
         if (msg.path) { fileEl.title = msg.path; }
         break;
+      case 'replay':
+        // The host rebuilt (panel reopened) or switched the session: wipe the
+        // transcript and re-render the persisted history so the conversation
+        // is not lost with the old DOM. Long imports arrive pre-truncated.
+        messagesEl.innerHTML = '';
+        currentBubble = null;
+        currentRaw = '';
+        attachments = [];
+        renderAttachments();
+        (msg.items || []).forEach(function (it) {
+          addMessage(it.role === 'assistant' ? 'assistant' : 'user', it.content || '');
+        });
+        scrollDown();
+        break;
       case 'attachment':
         upsertAttachment(msg.item);
         break;

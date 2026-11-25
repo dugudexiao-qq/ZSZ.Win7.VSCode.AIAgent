@@ -80,6 +80,16 @@ function makeEl(id) {
       this.children.length = 0;
     }
   });
+  // 同理：innerHTML = ''（replay 前清屏）也必须清空 children
+  let _html = '';
+  Object.defineProperty(el, 'innerHTML', {
+    configurable: true,
+    get: function () { return _html; },
+    set: function (v) {
+      _html = String(v === undefined || v === null ? '' : v);
+      if (!_html) { this.children.length = 0; }
+    }
+  });
   return el;
 }
 
@@ -343,6 +353,29 @@ check('a learned lesson is reported in the transcript, not silently stored', fun
   /* v1.11.1：菜单按钮计数必须实时刷新，不能等整轮结束的 state 才变。 */
   assert.ok(/经验记忆 \(3\)/.test(els.lessons.textContent),
     'the menu button must reflect the new lesson count immediately');
+});
+
+check('a replay event rebuilds the transcript after a reopen or session switch (v1.11.4)', function () {
+  // 先在屏幕上放一些旧内容，replay 必须清掉它们而不是追加
+  hostMessage({ type: 'delta', text: '这是上一次会话的残留输出' });
+  const stale = els.messages.children.length;
+  assert.ok(stale > 0, 'precondition: the DOM has stale content');
+  hostMessage({
+    type: 'replay',
+    items: [
+      { role: 'user', content: '帮我把配置改成 UTF-8' },
+      { role: 'assistant', content: '已改好。' }
+    ]
+  });
+  const kids = els.messages.children;
+  assert.strictEqual(kids.length, 2, 'replay wipes the DOM and renders exactly the history');
+  assert.strictEqual(kids[0].className, 'msg user');
+  assert.strictEqual(kids[1].className, 'msg assistant');
+  assert.ok(/帮我把配置改成 UTF-8/.test(kids[0].textContent));
+  assert.ok(/已改好/.test(kids[1].textContent));
+  // 空历史（新对话）也要清屏
+  hostMessage({ type: 'replay', items: [] });
+  assert.strictEqual(els.messages.children.length, 0, 'an empty history must clear the transcript');
 });
 
 check('thoughts and tool calls interleave inline, collapsed by default (v1.9.0)', function () {

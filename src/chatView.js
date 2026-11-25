@@ -10,6 +10,11 @@ const snapLib = require('./snapshots');
 
 const EXT_ID = manifest.publisher + '.' + manifest.name;
 
+/* History replay cap. Imported files push their FULL text into the history;
+ * replaying that verbatim into a fresh webview would freeze the DOM and cost
+ * megabytes of scrollback. The complete text stays in the context either way. */
+const REPLAY_MAX_CHARS = 4000;
+
 function makeNonce() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let text = '';
@@ -95,6 +100,7 @@ class ChatViewProvider {
     this._lastAnswer = '';
     this._publishSessions();
     this._saveSessions();
+    this._replay();
   }
 
   switchSession(id) {
@@ -110,6 +116,7 @@ class ChatViewProvider {
     this._lastAnswer = '';
     this._publishSessions();
     this._saveSessions();
+    this._replay();
   }
 
   /* 删掉一个对话。删的是当前对话就切到列表里剩下的第一个；只剩这一个时
@@ -129,6 +136,7 @@ class ChatViewProvider {
       this._history = this._sessions[0].history;
       this._attachments = [];
       this._lastAnswer = '';
+      this._replay();
     }
     this._publishSessions();
     this._saveSessions();
@@ -142,6 +150,26 @@ class ChatViewProvider {
     if (clean && (!s.title || s.title === '新对话')) { s.title = clean.slice(0, 28); }
     s.updatedAt = Date.now();
     this._saveSessions();
+  }
+
+  /* The transcript lives only in the webview DOM: closing the panel (or
+   * switching sessions) destroys it. Every fresh attach and every session
+   * switch therefore replays the persisted history, or the panel looks
+   * empty even though the conversation is still there. */
+  _replayItems() {
+    return (this._history || []).map((m) => {
+      const role = m && m.role === 'assistant' ? 'assistant' : 'user';
+      let text = String((m && m.content) || '');
+      if (text.length > REPLAY_MAX_CHARS) {
+        text = text.slice(0, REPLAY_MAX_CHARS) +
+          '\n\n（内容过长，仅显示前 ' + REPLAY_MAX_CHARS + ' 字符；完整内容仍在对话上下文中）';
+      }
+      return { role: role, content: text };
+    });
+  }
+
+  _replay() {
+    this._post({ type: 'replay', items: this._replayItems() }, false);
   }
 
   /* Shared attach path for the sidebar WebviewView and editor WebviewPanel.
@@ -163,6 +191,10 @@ class ChatViewProvider {
     });
     webview.onDidReceiveMessage((msg) => this._onMessage(msg, entry));
 
+    // Replay order matters: first wipe the DOM and lay down the persisted
+    // history, THEN replay queued live-run events so in-flight output
+    // continues below the restored transcript.
+    this._replay();
     const queued = this._pending;
     this._pending = [];
     queued.forEach((msg) => { this._post(msg, false); });

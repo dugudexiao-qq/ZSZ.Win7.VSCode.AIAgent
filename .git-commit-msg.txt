@@ -1,14 +1,14 @@
-v1.11.3: pasted error logs are tasks, not small talk
+v1.11.4: replay the persisted history when the panel reopens
 
-- Root cause of "agent answered with analysis and stopped as 已完成
-  after I pasted a web error response": intent detection ran keyword
-  matching on the pasted body, which carries no action verbs, so the
-  message was classified as pure Q&A and the auto-retry never fired
-- A paste of 400+ chars is now treated as a work request by default;
-  only a trailing question mark or a leading question word keeps it Q&A
-  (question words inside the pasted body no longer suppress the intent)
-- Auto-retry for talk-only rounds raised from 1 to 2 attempts
-- New guard: a round that produces only a thinking block (no prose, no
-  tool call) is nudged back to work instead of ending as a silent
-  success; after the budget is spent it ends with an explicit warning
-- Empty-reply completion now still emits the completion-check verdict
+- Closing the chat panel (or switching sessions) destroyed the
+  transcript DOM; reopening showed an empty panel even though the
+  conversation was still stored and still fed to the model
+- The host now replays the active session's history on every attach
+  (panel reopen / view rebuild) and after switching, creating or
+  deleting the active session; a blank session replays as a clear
+- Imported files stored in full are truncated for display (4000 chars,
+  full text stays in the model context); attachments reset on switch
+- Live-run events still replay after the history, so an in-flight run
+  continues below the restored transcript when the panel reopens
+- UI stub gained an innerHTML setter so the replay clear-screen is
+  actually verified (stale rows would otherwise look appended)
