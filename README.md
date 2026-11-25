@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.11.14-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.11.15-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -8,32 +8,6 @@
 - 源码：[github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent)（镜像：[GitCode](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)）
 - 反馈：[GitHub Issues](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/issues) 或 [dugudexiao@sina.com](mailto:dugudexiao@sina.com)
 - 零依赖（CommonJS，无 npm 包），离线 VSIX 安装，MIT 开源
-
-## 亮点图示
-
-### 1. 它会自己往下做，不是一问一答
-
-<img src="media/docs/feature-loop.svg" width="840" alt="一次任务是怎么跑起来的：拆解 → 调用工具 → 检查结果 → 收尾，失败会换办法重试">
-
-拆开需求、调工具、看结果、没成再试，四步循环到真正做完才收尾。每一步的思考、参数、原始输出和耗时都摊在对话里；收尾前还有一道自检，避免"说完成了但其实没做"。
-
-### 2. 三层记忆：不用每次从头交代
-
-<img src="media/docs/feature-memory.svg" width="840" alt="三层记忆：长期要求、经验记忆、对话历史，一起拼进系统提示词">
-
-你自己写的规矩、它踩坑后自动总结的经验、以及多会话的历史，都在本地保存，一起拼进系统提示词（配置全拉满约 4K token）——小模型也扛得住。
-
-### 3. 默认只读，动手前先过门
-
-<img src="media/docs/feature-safety.svg" width="840" alt="安全门禁：写文件要过 readOnly 与工具黑名单与路径限制，执行命令要过 Shell 总开关与逐条确认">
-
-装好就是只读。写文件要同时过 `readOnly` 与工具黑名单，还有路径、大小、二进制检查；执行命令要过 Shell 总开关与逐条确认。门禁写在代码里，提示词怎么说都绕不过去。
-
-### 4. 模型随便换，地址自己填
-
-<img src="media/docs/feature-model.svg" width="840" alt="模型可替换：云端 API、本地 GGUF、内网服务，一套配置一键切换">
-
-只认 OpenAI 的 `/chat/completions` 协议，云端、本地、内网都能接；多套「地址 + 模型 + Key」存成配置，菜单里点一下切换，顶部徽章显示当前在用哪个模型。没有内置 Key，也不上报任何内容。
 
 ## 核心特性
 
@@ -72,9 +46,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.14** 的附件 `zsz-win7-vscode-aiagent-1.11.14.vsix`（约 190 KB）
-   （直链：[Releases/download/v1.11.14](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.14/zsz-win7-vscode-aiagent-1.11.14.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.14.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.15** 的附件 `zsz-win7-vscode-aiagent-1.11.15.vsix`（约 190 KB）
+   （直链：[Releases/download/v1.11.15](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.15/zsz-win7-vscode-aiagent-1.11.15.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.15.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
@@ -135,6 +109,7 @@
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.11.15**：撤掉 v1.11.12 加进详情页的 4 张自绘示意图——排版和字形在 VS Code 的 Markdown 渲染里都不好看，反而干扰阅读。README 回到纯文字条目，自测加了反向用例（README 不许再嵌 `media/docs` 图片、该目录不许留残图），避免以后又混进来。
 - **v1.11.14**：新增「检查设置（旧版本/同名插件残留）」命令。会去看 `settings.json` 里三类东西：已废弃、当前版本不认识的键、值还等于旧版内置默认值的项；另外扫描扩展目录里同一 ID 的其它版本目录（VS Code 只启用一个，但旧版的默认值会被合并进设置界面）。启动时只在发现新情况时提醒一次，清理必须你点一下才执行，绝不擅自改配置。
 - **v1.11.13**：导入的文件在消息发出后就从输入框上方消失。之前那排「已导入 (n)」标签会一直挂着，回答完了还在，看着像附件没发出去、或者下一次还要重发一遍。文件内容其实在导入那一刻就已经进了对话历史，标签只是临时提示，发出去即收起（对话记录里仍留一行「已导入文件」）。
 - **v1.11.12**：扩展详情页加了 4 张自绘示意图（SVG，随包分发、不联网加载）：任务执行循环、三层记忆、安全门禁、模型可替换。新装用户不用读一堆条目就能看懂它到底能做什么；自测里加了断链检查，图片路径或打包白名单出问题会直接失败。

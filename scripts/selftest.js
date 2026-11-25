@@ -786,9 +786,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.11.14, no built-in endpoint/model, 22 commands, all activation events', function () {
+  check('manifest: 1.11.15, no built-in endpoint/model, 22 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.14');
+    assert.strictEqual(manifest.version, '1.11.15');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -874,26 +874,18 @@ try {
     assert.ok(!/'key ok'/.test(chatJs), 'the old "key ok" label must be gone');
   });
 
-  /* v1.11.12: README 里的亮点图示必须真实存在，且要随 vsix 一起打进去——
-   * 断链在扩展详情页上就是一张破图，而且只有装完才看得见。 */
-  check('README feature diagrams exist and ship inside the extension', function () {
+  /* v1.11.15: 详情页里手绘图示全撤了（读者反馈难看）。
+   * 用例反过来守：README 不许再嵌示意图，media/docs 也不许残留，免得下次又混进来。 */
+  check('README embeds no hand-drawn diagrams and media/docs stays clean', function () {
     const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
-    const srcs = [];
-    const re = /<img[^>]+src="([^"]+)"/g;
-    let m;
-    while ((m = re.exec(readme))) { srcs.push(m[1]); }
-    assert.ok(srcs.length >= 4, 'README must embed at least 4 feature diagrams, got ' + srcs.length);
-    srcs.forEach(function (src) {
-      assert.ok(/^media\/docs\/[a-z0-9.-]+\.svg$/.test(src), 'diagram must live under media/docs as svg: ' + src);
-      const full = path.join(__dirname, '..', src);
-      assert.ok(fs.existsSync(full), 'missing diagram file: ' + src);
-      const svg = fs.readFileSync(full, 'utf8');
-      assert.ok(/^<svg[\s\S]*<\/svg>\s*$/.test(svg.trim()), 'diagram must be a single well-formed svg: ' + src);
-      assert.ok(/viewBox="0 0 \d+ \d+"/.test(svg), 'diagram needs a viewBox so it scales: ' + src);
-      assert.ok(/font-family="[^"]*YaHei/.test(svg), 'diagram text must declare a CJK fallback font: ' + src);
-    });
+    assert.ok(!/<img[^>]+src="media\/docs\//.test(readme),
+      'README must not embed media/docs diagrams any more');
 
-    /* 打包器按扩展名过滤 media/，svg 必须在白名单里，否则详情页图片是空的。 */
+    const docs = path.join(__dirname, '..', 'media', 'docs');
+    const left = fs.existsSync(docs) ? fs.readdirSync(docs) : [];
+    assert.strictEqual(left.length, 0, 'media/docs must hold no leftover diagrams: ' + left.join(', '));
+
+    /* 活动栏/详情页图标仍是 svg，打包器必须继续把 media 下的 svg 打进去。 */
     const pack = fs.readFileSync(path.join(__dirname, 'pack-vsix.js'), 'utf8');
     assert.ok(/addDir\('media'[\s\S]{0,160}svg/.test(pack), 'packer must include media/**/*.svg');
   });
