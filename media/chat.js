@@ -829,10 +829,6 @@
   importBtn.addEventListener('click', function () { vscode.postMessage({ type: 'import' }); });
   exportBtn.addEventListener('click', function () { vscode.postMessage({ type: 'export' }); });
   settingsBtn.addEventListener('click', function () { vscode.postMessage({ type: 'settings' }); });
-  var resetFlagsBtn = document.getElementById('resetFlags');
-  if (resetFlagsBtn) {
-    resetFlagsBtn.addEventListener('click', function () { vscode.postMessage({ type: 'resetFlags' }); });
-  }
   endpointBtn.addEventListener('click', function () { vscode.postMessage({ type: 'endpoint' }); });
   keyState.addEventListener('click', function () {
     // 没配 key 时这个徽标就是唯一显眼的入口：直接弹设置框，而不是先诊断再让人去菜单找。
@@ -1173,19 +1169,19 @@
     if (!msg || !msg.type) { return; }
     switch (msg.type) {
       case 'state':
-        if (msg.hasKey) {
-          keyState.textContent = 'key ok';
-          keyState.className = 'badge ok';
-        } else if (msg.localEndpoint) {
-          keyState.textContent = 'local';
+        /* 徽章直接显示当前在用的模型名：比 "key ok" 有用——一眼知道这次
+         * 请求会打到哪个模型。没配 Key 才退回提示文字。 */
+        var modelName = String(msg.model || '').trim();
+        if (msg.hasKey || msg.localEndpoint) {
+          keyState.textContent = modelName || '未指定模型';
           keyState.className = 'badge ok';
         } else {
-          keyState.textContent = 'no key';
+          keyState.textContent = '未配置 Key';
           keyState.className = 'badge warn';
         }
         keyPresent = Boolean(msg.hasKey || msg.localEndpoint);
         keyState.title = keyPresent
-          ? msg.baseUrl + ' / ' + msg.model + '（点击诊断连接）'
+          ? (modelName ? modelName + ' · ' : '') + msg.baseUrl + '（点击诊断连接）'
           : '还没有配置 API Key（点击设置；本地端点可留空）';
         if (msg.author) {
           authorBtn.textContent = '© ' + msg.author + ' · MIT · v' + msg.version;
@@ -1204,7 +1200,7 @@
          * on（蓝）= 某项能力开着；其余中性灰。所以「确认：关」才是黄的。 */
         if (flagWrite) {
           flagWrite.textContent = msg.writeMode ? '写入：可写' : '写入：只读';
-          flagWrite.className = msg.writeMode ? 'flag on' : 'flag';
+          flagWrite.className = 'flag';
           flagWrite.setAttribute('aria-pressed', msg.writeMode ? 'true' : 'false');
           flagWrite.title = msg.writeMode
             ? '写入模式：可写（Agent 能改文件，点击改回只读）'
@@ -1212,7 +1208,7 @@
         }
         if (flagWriteConfirm) {
           flagWriteConfirm.textContent = msg.writeConfirm ? '写入确认：开' : '写入确认：关';
-          flagWriteConfirm.className = msg.writeConfirm ? 'flag' : 'flag warn';
+          flagWriteConfirm.className = 'flag';
           flagWriteConfirm.setAttribute('aria-pressed', msg.writeConfirm ? 'true' : 'false');
           flagWriteConfirm.title = msg.writeConfirm
             ? '写入确认：开（每次写文件前先问你，点击关闭）'
@@ -1220,7 +1216,7 @@
         }
         if (flagShellConfirm) {
           flagShellConfirm.textContent = msg.shellConfirm ? '命令确认：开' : '命令确认：关';
-          flagShellConfirm.className = msg.shellConfirm ? 'flag' : 'flag warn';
+          flagShellConfirm.className = 'flag';
           flagShellConfirm.setAttribute('aria-pressed', msg.shellConfirm ? 'true' : 'false');
           flagShellConfirm.title = msg.shellConfirm
             ? '命令确认：开（每条命令执行前先问你，点击关闭）'
@@ -1228,7 +1224,7 @@
         }
         if (flagSubtask) {
           flagSubtask.textContent = msg.subtaskMode ? '子任务：开' : '子任务：关';
-          flagSubtask.className = msg.subtaskMode ? 'flag on' : 'flag';
+          flagSubtask.className = 'flag';
           flagSubtask.setAttribute('aria-pressed', msg.subtaskMode ? 'true' : 'false');
           flagSubtask.title = msg.subtaskMode
             ? '子任务模式：开（独立子任务可交给子代理，点击关闭）'

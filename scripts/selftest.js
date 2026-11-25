@@ -785,9 +785,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.11.0, no built-in endpoint/model, 21 commands, all activation events', function () {
+  check('manifest: 1.11.10, no built-in endpoint/model, 21 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.9');
+    assert.strictEqual(manifest.version, '1.11.10');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -836,7 +836,7 @@ try {
 
   /* ---- chat transcript look (v1.11.6) ---- */
 
-  check('chat UI: user/AI turns are distinct, turns are split, flags can be reset', function () {
+  check('chat UI: user/AI turns are distinct, turns are split, flags are uniform, header shows model', function () {
     const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.css'), 'utf8');
     const user = /\.msg\.user\s*\{([\s\S]*?)\}/.exec(css);
     const assistant = /\.msg\.assistant\s*\{([\s\S]*?)\}/.exec(css);
@@ -859,13 +859,16 @@ try {
     assert.ok(/classList\.contains\('divider'\)/.test(chatJs), 'divider must not be doubled');
 
     const view = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
-    assert.ok(/id="resetFlags"/.test(view), 'menu must offer a reset for the runtime flags');
-    assert.ok(/case 'resetFlags':\s*\n\s*return this\._resetFlags\(\)/.test(view), 'resetFlags must be handled');
-    const reset = /async _resetFlags\(\)\s*\{([\s\S]*?)\n  \}/.exec(view);
-    assert.ok(reset, '_resetFlags must exist');
-    assert.ok(/setWriteMode\(false\)/.test(reset[1]) && /setWriteConfirm\(true\)/.test(reset[1]) &&
-      /setShellConfirm\(true\)/.test(reset[1]) && /setSubtaskMode\(false\)/.test(reset[1]),
-      'reset must restore the shipped defaults');
+    /* v1.11.10: 复位按钮去掉了——四个开关外观统一，不再有「颜色看着像坏了」
+     * 的问题，也就不需要一键回默认。 */
+    assert.ok(!/id="resetFlags"/.test(view), 'the reset-flags menu item must be gone');
+    assert.ok(!/_resetFlags/.test(view), 'the reset-flags handler must be gone too');
+    assert.ok(!/'flag on'|'flag warn'/.test(chatJs), 'runtime flags must not be colour-coded by state');
+
+    /* 顶部徽章显示模型名，而不是无意义的 key ok。 */
+    assert.ok(/keyState\.textContent = modelName \|\| '未指定模型'/.test(chatJs),
+      'header badge must show the active model name');
+    assert.ok(!/'key ok'/.test(chatJs), 'the old "key ok" label must be gone');
   });
 
   console.log('\nAll ' + passed + ' self-tests passed.');

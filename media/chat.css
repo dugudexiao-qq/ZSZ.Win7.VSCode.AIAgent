@@ -105,6 +105,16 @@ button.menu-item.subtask-on { color: var(--vscode-textLink-foreground, #3794ff);
 
 .hdr .badge { flex: 0 0 auto; }
 
+/* 顶部徽章：显示当前在用的模型名，名字可能很长（deepseek-v4.1-flash 之类），
+ * 允许压缩并打省略号，完整值放 title。 */
+#keystate {
+  max-width: 15em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
 .badge {
   font-size: 11px;
   padding: 1px 6px;
@@ -116,11 +126,10 @@ button.menu-item.subtask-on { color: var(--vscode-textLink-foreground, #3794ff);
 .badge.ok { color: var(--vscode-testing-iconPassed, #89d185); }
 .badge.warn { color: var(--vscode-editorWarning-foreground, #cca700); }
 
-/* 标题下的 4 个运行开关：文字直说状态（写入：只读 / 命令确认：开），
- * 不用图标——省去记忆成本。颜色只有两种强调：
- *   warn（黄）= 已经开始不问就做，需要留意（写入确认关、命令确认关）
- *   on（蓝）  = 某项能力开着（写入可写、子任务开）
- * 其余中性灰。窄面板自动换行。 */
+/* 标题下的 4 个运行开关：状态一律由文字表达（写入：只读 / 命令确认：开），
+ * 四个按钮外观完全相同——同一种边框、同一种前景色，不做「开=蓝、风险=黄」
+ * 的着色。这样换台机器、换个安装历史看过去都是同一个样子，颜色不会再
+ * 因为存下来的开关值不同而变，也就不会看着像样式坏了。窄面板自动换行。 */
 .flags {
   display: flex;
   flex-wrap: wrap;
@@ -144,19 +153,6 @@ button.flag {
 button.flag:hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.3));
   color: var(--vscode-foreground);
-}
-
-/* 要注意的状态：确认被关掉，动作不再问你 */
-button.flag.warn {
-  color: var(--vscode-editorWarning-foreground, #cca700);
-  border-color: currentColor;
-  font-weight: 600;
-}
-
-/* 能力已开启，不是风险 */
-button.flag.on {
-  color: var(--vscode-textLink-foreground, #3794ff);
-  border-color: currentColor;
 }
 
 button {
