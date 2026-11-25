@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.11.10-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.11.11-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -46,9 +46,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.10** 的附件 `zsz-win7-vscode-aiagent-1.11.10.vsix`（约 176 KB）
-   （直链：[Releases/download/v1.11.10](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.10/zsz-win7-vscode-aiagent-1.11.10.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.10.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.11** 的附件 `zsz-win7-vscode-aiagent-1.11.11.vsix`（约 176 KB）
+   （直链：[Releases/download/v1.11.11](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.11/zsz-win7-vscode-aiagent-1.11.11.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.11.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
@@ -109,6 +109,7 @@
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.11.11**：写入开关收敛成两道门。删掉冗余的 `win7Agent.allowWrite`——它和 `constraints.readOnly` 永远同进同退，从不独立生效，只在设置界面里制造「勾了却不能写」的困惑；现在写入只由 `constraints.readOnly` 与 `constraints.deniedTools` 决定。升级时自动清理旧键，且若旧值是 `allowWrite=false` 会补上 `readOnly=true`，保证不会因为删掉它而意外放开写入。
 - **v1.11.10**：顶部徽章不再显示无意义的「key ok」，改为直接显示当前在用的模型名（名字过长自动省略，完整值在悬停提示里，未配 Key 时显示「未配置 Key」）；四个运行开关取消「开=蓝、风险=黄」的着色，外观完全统一，状态只由文字表达——这样换机器或从旧版本升级上来，都不会再因为存下来的开关值不同而看着像样式坏了；顺手去掉「运行选项复位为默认」（视觉问题已从样式层解决，不需要它）。
 - **v1.11.9**：修复 v1.11.8 漏项保护的一个盲点——模型常把「1) 2) 清单」和第一个 runSubtask 写在同一条回复里，原实现只在纯文字回复里记录清单，导致这类情况不会触发提醒；现在任何一轮都会识别清单，漏项时能正常补完（新增端到端用例覆盖）。
 - **v1.11.8**：子任务模式不再「只开一个」：提示词改成先列编号清单、每项各调用一次 runSubtask，并明确「已委派过一次不等于任务结束」；子任务回执里带上「剩余额度 N 个」，模型知道还能继续；若列了 N 项却只完成 1 项就宣布收尾，会自动提醒一次并把剩余项补完（只提醒一次）。

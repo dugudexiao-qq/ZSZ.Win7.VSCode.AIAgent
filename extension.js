@@ -87,6 +87,16 @@ function activate(context) {
   runtime.log(info.name + ' v' + info.version + ' by ' + info.author);
   runtime.log('Target: ' + info.target + ' | running VS Code ' + vscode.version + ' / Node ' + process.versions.node);
 
+  /* win7Agent.allowWrite 已废弃（写入只由 readOnly + deniedTools 决定）。
+   * 升级时把旧键清掉，并补上 readOnly，防止原来被旧开关挡住的人突然能写盘。 */
+  runtime.migrateLegacyWriteSwitch()
+    .then(function (changed) {
+      if (changed) { runtime.log('retired the legacy win7Agent.allowWrite setting'); }
+    })
+    .catch(function (e) {
+      runtime.log('legacy allowWrite migration skipped: ' + (e && e.message ? e.message : e));
+    });
+
   provider = new ChatViewProvider(context.extensionUri);
   function refresh() { return provider.postState(); }
 
@@ -128,8 +138,7 @@ function activate(context) {
       try {
         const nowOn = await runtime.setWriteMode(!enabled);
         await refresh();
-        runtime.log('write mode -> ' + (nowOn ? 'ON' : 'OFF') +
-          ' (readOnly=' + (!nowOn) + ', allowWrite=' + nowOn + ')');
+        runtime.log('write mode -> ' + (nowOn ? 'ON' : 'OFF') + ' (readOnly=' + (!nowOn) + ')');
         vscode.window.showInformationMessage(
           APP + (nowOn ? ': 写入模式已开启（是否弹窗由「写入确认」开关决定）。'
                        : ': 已回到只读模式，Agent 不能再改文件。')

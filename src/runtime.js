@@ -96,7 +96,6 @@ function getConfig() {
     requireToolApproval: cfgValue(c, 'constraints.requireToolApproval'),
     subtaskMode: subtaskMode
   }), {
-    allowWrite: Boolean(cfgValue(c, 'allowWrite')),
     allowShell: Boolean(cfgValue(c, 'constraints.allowShell')),
     confirmShell: cfgValue(c, 'constraints.confirmShell') !== false,
     confirmWrite: cfgValue(c, 'constraints.confirmWrite') !== false,
@@ -443,22 +442,48 @@ async function clearApiKey() {
   catch (e) { log('SecretStorage.delete failed: ' + e.message); }
 }
 
-/* ---- write mode: flips the three switches that gate insertText/saveText ----
- * Both readOnly (code-level hard constraint) and the legacy allowWrite switch
- * must agree, and insertText must not sit in deniedTools. Returns the new on/off
- * state so callers can show a confirmation dialog first. */
+/* ---- write mode: the two gates that guard insertText/saveText/createFile ----
+ * readOnly is the code-level hard constraint, deniedTools is the per-tool
+ * blacklist; both must be clear for write mode to be on. (The old top-level
+ * allowWrite switch was a third, always-redundant gate and has been retired —
+ * migrateLegacyWriteSwitch() below cleans it out of existing settings.) */
 function isWriteMode() {
   const c = getConfig().constraints;
-  return c.allowWrite === true && c.readOnly === false && c.deniedTools.indexOf('insertText') === -1;
+  return c.readOnly === false && c.deniedTools.indexOf('insertText') === -1;
+}
+
+/* 老版本的 win7Agent.allowWrite 已废弃：写入只由 readOnly + deniedTools 决定。
+ * 升级时要做两件事，否则语义会漂移：
+ *   1) 旧值 allowWrite=false 意味着「禁止写入」，补一个 readOnly=true —— 不然
+ *      曾经被挡住的人升级后突然就能写盘了；
+ *   2) 把这个键从 settings.json 里删掉，免得它在设置界面里继续误导人。 */
+async function migrateLegacyWriteSwitch() {
+  const cfg = vscode.workspace.getConfiguration('win7Agent');
+  const info = typeof cfg.inspect === 'function' ? cfg.inspect('allowWrite') : null;
+  if (!info) { return false; }
+  const scopes = [
+    [info.globalValue, vscode.ConfigurationTarget.Global],
+    [info.workspaceValue, vscode.ConfigurationTarget.Workspace],
+    [info.workspaceFolderValue, vscode.ConfigurationTarget.WorkspaceFolder]
+  ];
+  const set = scopes.filter(function (s) { return s[0] !== undefined; });
+  if (!set.length) { return false; }
+  if (cfg.get('allowWrite') === false) {
+    // 用旧开关实际所在的 scope 写，避免被另一层设置覆盖。
+    await cfg.update('constraints.readOnly', true, set[set.length - 1][1]);
+  }
+  for (let i = 0; i < set.length; i++) {
+    await cfg.update('allowWrite', undefined, set[i][1]);
+  }
+  return true;
 }
 
 async function setWriteMode(enabled) {
   const cfg = vscode.workspace.getConfiguration('win7Agent');
-  // All three gates must be written to the SAME scope, otherwise a workspace
+  // Both gates must be written to the SAME scope, otherwise a workspace
   // setting can override only one of them and leave write mode half-on.
   const target = settingTarget(cfg, 'constraints.readOnly');
   await cfg.update('constraints.readOnly', !enabled, target);
-  await cfg.update('allowWrite', enabled, target);
   const denied = (cfg.get('constraints.deniedTools') || []).map(String);
   const withoutInsert = denied.filter(function (t) { return t !== 'insertText'; });
   const next = enabled ? withoutInsert : (withoutInsert.indexOf('insertText') === -1 ? withoutInsert.concat(['insertText']) : withoutInsert);
@@ -533,6 +558,7 @@ module.exports = {
   clearApiKey,
   isWriteMode,
   setWriteMode,
+  migrateLegacyWriteSwitch,
   isShellConfirm,
   setShellConfirm,
   isWriteConfirm,

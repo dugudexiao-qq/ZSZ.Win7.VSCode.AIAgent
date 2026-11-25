@@ -2,7 +2,7 @@
   "name": "win7-ai-agent",
   "displayName": "ZSZ.Win7.VSCode.AIAgent",
   "description": "适用于 Windows 7 + VS Code 1.70.x 的本地大模型 AI Agent。",
-  "version": "1.11.10",
+  "version": "1.11.11",
   "publisher": "dugudexiao",
   "icon": "media/icon.png",
   "author": {
@@ -271,11 +271,6 @@
           "default": 1000000,
           "minimum": 5000,
           "description": "HTTP 请求超时时间（毫秒）。默认 1000000 毫秒 = 1000 秒（约 16.7 分钟），用于大型本地 GGUF 模型首次加载较慢的情况；同时作为无响应超时与整体墙钟上限。「诊断连接」命令使用独立的 15 秒超时。"
-        },
-        "win7Agent.allowWrite": {
-          "type": "boolean",
-          "default": false,
-          "description": "旧版写入开关。仍受 win7Agent.constraints.readOnly 与 deniedTools 约束，且以后者为准。"
         },
         "win7Agent.extraCaFile": {
           "type": "string",

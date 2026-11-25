@@ -352,7 +352,6 @@ class ChatViewProvider {
       localEndpoint: config.localEndpoint,
       model: config.model,
       baseUrl: config.baseUrl,
-      allowWrite: config.allowWrite,
       author: info.author,
       email: info.email,
       version: info.version,

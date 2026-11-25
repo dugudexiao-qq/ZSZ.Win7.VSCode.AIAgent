@@ -117,14 +117,12 @@ function emitAwaiting(sink, text) {
   if (emit) { emit({ type: 'awaiting', text: text }); }
 }
 
-/* runtime.getConfig() exposes the master write switch as constraints.allowWrite
- * (the legacy top-level allowWrite may be absent). Accept either shape so the
- * write tools actually work when write mode is enabled. */
+/* 写入只有两道门：readOnly（代码级硬约束）与 deniedTools（工具黑名单）。
+ * 旧的顶层 allowWrite 开关已废弃，这里不再考虑它。 */
 function canWrite(config) {
-  return Boolean(config && (
-    config.allowWrite === true ||
-    (config.constraints && config.constraints.allowWrite === true)
-  ));
+  const c = config && config.constraints;
+  if (!c) { return false; }
+  return c.readOnly === false && (c.deniedTools || []).indexOf('insertText') === -1;
 }
 
 function isSubtaskMode(config) {
@@ -364,8 +362,8 @@ async function getActiveFileTool() {
 }
 
 async function insertTextTool(args, config, ctx) {
-  if (!canWrite(config) || config.constraints.readOnly) {
-    throw new Error('insertText is disabled (allowWrite=false or constraints.readOnly=true).');
+  if (!canWrite(config)) {
+    throw new Error('insertText is disabled (write mode is off: win7Agent.constraints.readOnly=true, or insertText sits in constraints.deniedTools).');
   }
   const editor = vscode.window.activeTextEditor;
   if (!editor) { throw new Error('No active editor.'); }
@@ -393,8 +391,8 @@ async function insertTextTool(args, config, ctx) {
 }
 
 async function saveTextTool(args, config, ctx) {
-  if (!canWrite(config) || config.constraints.readOnly) {
-    throw new Error('saveText is disabled (allowWrite=false or constraints.readOnly=true).');
+  if (!canWrite(config)) {
+    throw new Error('saveText is disabled (write mode is off: win7Agent.constraints.readOnly=true, or saveText sits in constraints.deniedTools).');
   }
   const loc = safeRelPath(args, 'saveText', config.constraints.allowedReadGlobs);
   const text = String(args.text || '');
@@ -431,8 +429,8 @@ async function saveTextTool(args, config, ctx) {
  * and it refuses to clobber an existing file unless overwrite=true is given
  * explicitly. Same write-mode gate and workspace boundary as the other tools. */
 async function createFileTool(args, config, ctx) {
-  if (!canWrite(config) || config.constraints.readOnly) {
-    throw new Error('createFile is disabled (allowWrite=false or constraints.readOnly=true).');
+  if (!canWrite(config)) {
+    throw new Error('createFile is disabled (write mode is off: win7Agent.constraints.readOnly=true, or createFile sits in constraints.deniedTools).');
   }
   const loc = safeRelPath(args, 'createFile', config.constraints.allowedReadGlobs);
   /* "dir/" names a folder, not a file. Windows happily writes a file literally

@@ -347,7 +347,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.10');
+  assert.strictEqual(info.version, '1.11.11');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -546,7 +546,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.10');
+  assert.strictEqual(state.version, '1.11.11');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -741,18 +741,34 @@ async function main() {
   await commands['win7Agent.openSettingsJson']();
   console.log('  PASS  Set Server URL / Port writes user settings without the Settings UI');
 
-  /* Write mode: one command flips all three gates, and back. */
+  /* Write mode: one command flips both remaining gates, and back. */
   assert.strictEqual(runtime.isWriteMode(), false, 'default must be read-only');
   await runtime.setWriteMode(true);
-  assert.strictEqual(runtime.isWriteMode(), true, 'write mode must flip all three gates on');
+  assert.strictEqual(runtime.isWriteMode(), true, 'write mode must flip both gates on');
   assert.strictEqual(settings['win7Agent.constraints.readOnly'], false);
-  assert.strictEqual(settings['win7Agent.allowWrite'], true);
   assert.ok(settings['win7Agent.constraints.deniedTools'].indexOf('insertText') === -1);
   await runtime.setWriteMode(false);
   assert.strictEqual(runtime.isWriteMode(), false, 'write mode must be reversible');
   assert.strictEqual(settings['win7Agent.constraints.readOnly'], true);
   assert.ok(settings['win7Agent.constraints.deniedTools'].indexOf('insertText') !== -1);
-  console.log('  PASS  write-mode toggle flips readOnly/allowWrite/deniedTools and back');
+  console.log('  PASS  write-mode toggle flips readOnly/deniedTools and back');
+
+  /* v1.11.11: the retired allowWrite key is cleaned out, and a legacy
+   * allowWrite=false must be turned into readOnly=true so an upgrade can never
+   * silently grant write access. */
+  scoped.global['win7Agent.allowWrite'] = false;
+  settings['win7Agent.allowWrite'] = false;
+  scoped.global['win7Agent.constraints.readOnly'] = false;
+  settings['win7Agent.constraints.readOnly'] = false;
+  const migrated = await runtime.migrateLegacyWriteSwitch();
+  assert.strictEqual(migrated, true, 'legacy allowWrite must be detected and migrated');
+  assert.strictEqual(settings['win7Agent.constraints.readOnly'], true,
+    'legacy allowWrite=false must be converted into readOnly=true');
+  assert.strictEqual(runtime.getConfig().constraints.readOnly, true, 'runtime must see the migrated constraint');
+  assert.strictEqual(settings['win7Agent.allowWrite'], undefined, 'the retired key must be removed from settings');
+  const secondRun = await runtime.migrateLegacyWriteSwitch();
+  assert.strictEqual(secondRun, false, 'migration must be a no-op once the key is gone');
+  console.log('  PASS  legacy allowWrite is retired without ever granting write access');
 
   /* Shell confirmation: independent user-facing switch, persists and is reversible. */
   assert.strictEqual(runtime.isShellConfirm(), true, 'shell confirmation must be ON by default');

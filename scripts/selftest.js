@@ -785,9 +785,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.11.10, no built-in endpoint/model, 21 commands, all activation events', function () {
+  check('manifest: 1.11.11, no built-in endpoint/model, 21 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.10');
+    assert.strictEqual(manifest.version, '1.11.11');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -808,6 +808,8 @@ try {
     assert.strictEqual(props['win7Agent.constraints.allowShell'].default, true, 'shell must be ON by default');
     assert.strictEqual(props['win7Agent.constraints.confirmShell'].default, true, 'per-command confirmation must stay ON');
     assert.strictEqual(props['win7Agent.constraints.confirmWrite'].default, true, 'write confirmation switch must exist and default ON');
+    /* v1.11.11: 旧的 win7Agent.allowWrite 已废弃，写入只由 readOnly + deniedTools 决定。 */
+    assert.ok(!props['win7Agent.allowWrite'], 'the redundant legacy write switch must be gone');
     assert.strictEqual(props['win7Agent.confirmTimeoutMs'].default, 120000, 'confirm dialogs must time out by default');
     assert.strictEqual(props['win7Agent.confirmTimeoutMs'].minimum, 10000);
     assert.strictEqual(props['win7Agent.taskCheck'].default, true, 'completion check must exist and default ON');
