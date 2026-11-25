@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="340" viewBox="0 0 940 340" role="img" aria-label="一次任务是怎么跑起来的">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+  <rect x="0.5" y="0.5" width="939" height="339" rx="10" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="42" y="44" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#111827">一次任务是怎么跑起来的</text>
+  <text x="42" y="66" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#6b7280">不是一问一答，而是反复「做一步、看结果、再决定」的循环</text>
+
+  <g font-family="Segoe UI, Microsoft YaHei, sans-serif">
+    <rect x="42" y="84" width="196" height="86" rx="8" fill="#f8fafc" stroke="#d7dce3"/>
+    <text x="140" y="114" text-anchor="middle" font-size="15" font-weight="600" fill="#111827">① 拆解</text>
+    <text x="140" y="138" text-anchor="middle" font-size="12" fill="#4b5563">把需求拆成几步</text>
+    <text x="140" y="156" text-anchor="middle" font-size="12" fill="#9ca3af">需要时开子任务并行</text>
+
+    <rect x="262" y="84" width="196" height="86" rx="8" fill="#eef4ff" stroke="#93b4f7"/>
+    <text x="360" y="114" text-anchor="middle" font-size="15" font-weight="600" fill="#1e40af">② 调用工具</text>
+    <text x="360" y="138" text-anchor="middle" font-size="12" fill="#334155">读文件 · 执行命令</text>
+    <text x="360" y="156" text-anchor="middle" font-size="12" fill="#334155">写文件 · 委派子任务</text>
+
+    <rect x="482" y="84" width="196" height="86" rx="8" fill="#f8fafc" stroke="#d7dce3"/>
+    <text x="580" y="114" text-anchor="middle" font-size="15" font-weight="600" fill="#111827">③ 检查结果</text>
+    <text x="580" y="138" text-anchor="middle" font-size="12" fill="#4b5563">看输出、看报错</text>
+    <text x="580" y="156" text-anchor="middle" font-size="12" fill="#9ca3af">核对是不是真做到了</text>
+
+    <rect x="702" y="84" width="196" height="86" rx="8" fill="#f8fafc" stroke="#d7dce3"/>
+    <text x="800" y="114" text-anchor="middle" font-size="15" font-weight="600" fill="#111827">④ 收尾</text>
+    <text x="800" y="138" text-anchor="middle" font-size="12" fill="#4b5563">汇总结果</text>
+    <text x="800" y="156" text-anchor="middle" font-size="12" fill="#9ca3af">踩过的坑存成经验</text>
+  </g>
+
+  <line x1="238" y1="127" x2="258" y2="127" stroke="#2563eb" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="458" y1="127" x2="478" y2="127" stroke="#2563eb" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="678" y1="127" x2="698" y2="127" stroke="#2563eb" stroke-width="1.6" marker-end="url(#ar)"/>
+
+  <path d="M580,170 L580,204 L360,204 L360,174" fill="none" stroke="#f59e0b" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+  <text x="470" y="226" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#b45309">没成功 → 换个办法重试，同一工具的多条错误会逐条记住</text>
+
+  <rect x="42" y="244" width="856" height="72" rx="8" fill="#f5f7fa" stroke="#e5e7eb"/>
+  <text x="62" y="270" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" font-weight="600" fill="#374151">全过程可见</text>
+  <text x="62" y="292" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#4b5563">思考过程 · 工具参数 · 原始输出 · 耗时，都摊在对话里；随时可以 Stop</text>
+  <text x="62" y="308" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#4b5563">收尾前会自查一遍，不会「说完成了但其实没做」，也不会空着回复就结束</text>
+</svg>
