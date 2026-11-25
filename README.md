@@ -1,12 +1,12 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.11.4-blue)](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.11.4-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
 - 扩展 ID：`dugudexiao.win7-ai-agent` · 作者：dugudexiao
-- 源码：[gitcode.com/dugudexiao/zsz.Win7.AIAgent](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)
-- 反馈：[Issues](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/issues) 或 [dugudexiao@sina.com](mailto:dugudexiao@sina.com)
+- 源码：[github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent)（镜像：[GitCode](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)）
+- 反馈：[GitHub Issues](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/issues) 或 [dugudexiao@sina.com](mailto:dugudexiao@sina.com)
 - 零依赖（CommonJS，无 npm 包），离线 VSIX 安装，MIT 开源
 
 ## 核心特性
@@ -42,14 +42,16 @@
 
 ## 安装
 
-**方式一（推荐）：从 Releases 页下载安装包**
+**方式一（推荐）：从 GitHub Releases 下载安装包**
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases)，下载 **v1.11.4** 的附件 `zsz-win7-vscode-aiagent-1.11.4.vsix`（约 168 KB）
-   （直链：[Releases/download/v1.11.4](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases/download/v1.11.4/zsz-win7-vscode-aiagent-1.11.4.vsix)）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.4** 的附件 `zsz-win7-vscode-aiagent-1.11.4.vsix`（约 168 KB）
+   （直链：[Releases/download/v1.11.4](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.4/zsz-win7-vscode-aiagent-1.11.4.vsix)）
 2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.4.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
+
+> 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
 
 **方式二：从源码打包**
 
@@ -133,4 +135,4 @@ code --uninstall-extension dugudexiao.win7-ai-agent
 
 Copyright (c) 2026 dugudexiao · 以 [MIT 许可证](./LICENSE) 开源发布。
 
-改进意见与问题反馈：[Issues](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/issues) 或邮件 [dugudexiao@sina.com](mailto:dugudexiao@sina.com)。
+改进意见与问题反馈：[GitHub Issues](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/issues) 或邮件 [dugudexiao@sina.com](mailto:dugudexiao@sina.com)。

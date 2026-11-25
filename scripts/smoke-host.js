@@ -390,7 +390,7 @@ async function main() {
     'script src must carry a build-stamp query so a same-folder upgrade cannot serve a cached old chat.js (v1.11.4)');
   assert.ok(/chat\.css\?v=1\.11\.4-\d+/.test(view.webview.html) && /markdown\.js\?v=1\.11\.4-\d+/.test(view.webview.html),
     'css and markdown loader must carry the build-stamp query too');
-  assert.ok(/"repository"[^}]*gitcode\.com\/dugudexiao\/zsz\.Win7\.AIAgent/.test(require('fs').readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')),
+  assert.ok(/"repository"[^}]*github\.com\/dugudexiao-qq\/ZSZ\.Win7\.VSCode\.AIAgent/.test(require('fs').readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')),
     'package.json must point at the public repository (marketplace shows the link)');
   assert.ok(view.webview.html.indexOf('© ' ) !== -1 && view.webview.html.indexOf('MIT') !== -1,
     'the panel menu must carry the (c) author / MIT copyright line (v1.9.3)');

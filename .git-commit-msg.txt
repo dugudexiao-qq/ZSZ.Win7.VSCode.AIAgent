@@ -1,14 +1,8 @@
-v1.11.4: replay the persisted history when the panel reopens
+docs: GitHub is now the primary repo (GitCode stays as a mirror)
 
-- Closing the chat panel (or switching sessions) destroyed the
-  transcript DOM; reopening showed an empty panel even though the
-  conversation was still stored and still fed to the model
-- The host now replays the active session's history on every attach
-  (panel reopen / view rebuild) and after switching, creating or
-  deleting the active session; a blank session replays as a clear
-- Imported files stored in full are truncated for display (4000 chars,
-  full text stays in the model context); attachments reset on switch
-- Live-run events still replay after the history, so an in-flight run
-  continues below the restored transcript when the panel reopens
-- UI stub gained an innerHTML setter so the replay clear-screen is
-  actually verified (stale rows would otherwise look appended)
+- package.json: repository / homepage / bugs now point at
+  github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent
+- README: download section leads with GitHub Releases (raw binary
+  links work there), GitCode kept as a China-friendly mirror
+- GitHub Release v1.11.4 published with the VSIX attached via API
+  (fills the gap left by the revoked GitCode token)

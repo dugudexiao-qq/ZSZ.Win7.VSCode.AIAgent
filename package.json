@@ -12,11 +12,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://gitcode.com/dugudexiao/zsz.Win7.AIAgent.git"
+    "url": "https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent.git"
   },
-  "homepage": "https://gitcode.com/dugudexiao/zsz.Win7.AIAgent#readme",
+  "homepage": "https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent#readme",
   "bugs": {
-    "url": "https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/issues",
+    "url": "https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/issues",
     "email": "dugudexiao@sina.com"
   },
   "qna": false,
