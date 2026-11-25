@@ -325,6 +325,28 @@ try {
     assert.strictEqual(SUBTASK_MAX_DEPTH, 2, 'nested subtasks must be bounded');
   });
 
+  /* ---- v1.11.8: 子任务一项一次，漏项要能兜住 ---- */
+  check('subtasks: one call per plan item, budget echoed back, incomplete plans nudged', function () {
+    const agent = require('../src/agent');
+    assert.strictEqual(agent.countPlanItems('1) 读文件\n2) 改文件'), 2);
+    assert.strictEqual(agent.countPlanItems('1. 甲\n2. 乙\n3. 丙'), 3);
+    assert.strictEqual(agent.countPlanItems('3、丙'), 1);
+    assert.strictEqual(agent.countPlanItems('- 读文件\n- 改文件'), 0, 'dash bullets are not a plan');
+    assert.strictEqual(agent.countPlanItems(''), 0);
+
+    const on = rules.compileSystemPrompt({
+      basePrompt: 'BASE', constraints: { subtaskMode: true }, subtaskMode: true
+    });
+    assert.ok(/每一项各调用一次 runSubtask/.test(on), 'prompt must ask for one call per item');
+    assert.ok(/不要把「已经委派过一次」当成任务结束/.test(on),
+      'prompt must say one delegation is not the end of the task');
+
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'agent.js'), 'utf8');
+    assert.ok(/剩余子任务额度/.test(src), 'subtask result must echo the remaining budget');
+    assert.ok(/PLAN INCOMPLETE/.test(src), 'an incomplete plan must trigger a single nudge');
+    assert.strictEqual(/planNudged = true/.test(src), true);
+  });
+
   check('history / subtask budgets are configurable, not hard-coded to 10 rounds', function () {
     assert.strictEqual(historyLimit({ maxHistoryMessages: 400 }), 400);
     assert.strictEqual(historyLimit({ maxHistoryMessages: 1 }), 100, 'invalid values fall back safely');
@@ -765,7 +787,7 @@ try {
 
   check('manifest: 1.11.0, no built-in endpoint/model, 21 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.7');
+    assert.strictEqual(manifest.version, '1.11.8');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');

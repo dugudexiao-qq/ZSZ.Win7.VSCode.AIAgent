@@ -347,7 +347,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.7');
+  assert.strictEqual(info.version, '1.11.8');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -546,7 +546,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.7');
+  assert.strictEqual(state.version, '1.11.8');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -649,16 +649,24 @@ async function main() {
   scriptedResponses.length = 0;
   scriptedResponses.push('{"tool":"runSubtask","args":{"goal":"核对工作区文件清单","context":"只读"}}');
   scriptedResponses.push('子任务结论：共 1 个文件。');
+  // v1.11.8: 第二个子任务必须也能跑起来（曾经只开了一个的问题）。
+  scriptedResponses.push('{"tool":"runSubtask","args":{"goal":"核对工作区目录结构","context":"只读"}}');
+  scriptedResponses.push('子任务结论：只有根目录一层。');
   scriptedResponses.push('已汇总子任务结论，任务完成。');
   events.length = 0;
   await viewMessageHandler({ type: 'send', text: '请把核对工作拆成子任务' });
   assert.ok(events.some(function (e) { return e.type === 'subtask' && e.status === 'start'; }), 'subtask start must be visible');
   assert.ok(events.some(function (e) { return e.type === 'subtask' && e.status === 'done'; }), 'subtask completion must be visible');
+  assert.ok(events.filter(function (e) { return e.type === 'subtask' && e.status === 'start'; }).length >= 2,
+    'a second runSubtask in the same run must not be capped at one');
   assert.ok(events.some(function (e) {
     return e.type === 'tool' && /SUBTASK RESULT/.test(e.text || '') && /共 1 个文件/.test(e.text || '');
   }), 'parent must receive the child result as a tool result');
+  assert.ok(events.some(function (e) {
+    return e.type === 'tool' && /剩余子任务额度/.test(e.text || '');
+  }), 'each subtask result must tell the model how much budget is left');
   assert.ok(events.some(function (e) { return e.type === 'delta' && /已汇总子任务结论/.test(e.text || ''); }),
-    'parent must finish only after the subtask result');
+    'parent must finish only after the subtask results');
   console.log('  PASS  runSubtask executes an isolated child agent and feeds its conclusion back');
 
   /* Sub-task depth is bounded: a child cannot recursively spawn forever. */

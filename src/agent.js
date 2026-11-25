@@ -566,7 +566,7 @@ async function runSubtaskTool(args, config, ctx) {
 
   state.subtasks += 1;
   const index = state.subtasks;
-  const label = '子任务 ' + index + (depth ? ' · 第' + (depth + 1) + '级' : '') + '：' + goal.slice(0, 70);
+  const label = '子任务 ' + index + '/' + cap + (depth ? ' · 第' + (depth + 1) + '级' : '') + '：' + goal.slice(0, 70);
   const emit = typeof ctx.emit === 'function' ? ctx.emit : function () {};
   emit({ type: 'subtask', status: 'start', index: index, depth: depth + 1, text: label });
 
@@ -610,11 +610,27 @@ async function runSubtaskTool(args, config, ctx) {
   }
   emit({ type: 'subtask', status: 'done', index: index, depth: depth + 1,
     text: label + ' → ' + pathUtils.truncate(result || '(no result)', 80) });
-  return 'SUBTASK RESULT [' + label + ']:\n' + result;
+  const left = Math.max(0, cap - index);
+  return 'SUBTASK RESULT [' + label + ']:\n' + result + '\n\n' +
+    (left > 0
+      ? '剩余子任务额度：' + left + ' 个（本次已用 ' + index + '/' + cap + '）。清单里还有未完成项就继续调用 runSubtask，一项一次；全部完成后再汇总。'
+      : '子任务额度已用完（' + index + '/' + cap + '），请基于已有结论汇总，不要再调用 runSubtask。');
 }
 
-/* Collapse any error text to exactly one line: newlines, tabs and runs of
- * spaces all become a single space, then the tail is cut at MAX_ERROR_CHARS.
+/* 从一段正文里数「编号清单」的项数（1) 2、3. 这类行）。
+ * 只用于子任务模式的漏项保护：模型列了 3 项却只委派 1 项就收尾时提醒一次。
+ * 只认编号行，不认 -/* 列表——后者太常见，容易误判。 */
+function countPlanItems(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  let n = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*\d{1,2}\s*[).、]/.test(lines[i])) { n += 1; }
+    if (n >= 12) { break; }
+  }
+  return n;
+}
+
+/* Collapse any error text to exactly one line: newlines, tabs and runs of * spaces all become a single space, then the tail is cut at MAX_ERROR_CHARS.
  * The prefix "TOOL ERROR: " is added by the caller and must stay intact. */
 function oneLineError(text) {
   const flat = String(text === undefined || text === null ? '' : text)
@@ -862,6 +878,12 @@ async function runAgent(params) {
   let answer = '';
   let autoRetries = 0;
   let formatRetries = 0;
+  /* 子任务漏项保护：模型先写编号清单、却只委派其中一项就收尾时，提醒一次
+   * （只提醒一次，避免和模型拉锯）。planRound 记下清单出现在哪一轮，防止把
+   * 最终汇总里自己列的编号误当成计划。 */
+  let planItems = 0;
+  let planRound = -1;
+  let planNudged = false;
   try {
     for (let round = 0; round <= config.maxToolRounds; round++) {
       trace.rounds = round + 1;
@@ -920,6 +942,11 @@ async function runAgent(params) {
           ? (stripToolTemplateFragments(visible) || '（模型输出的调用模板不完整，已忽略。可重试或直接描述需求。）')
           : visible;
         answer = shown;
+        /* 记下模型自己列的编号清单（只在第一处出现时记，且只认根代理）。 */
+        if (depth === 0 && planRound < 0) {
+          const n = countPlanItems(shown);
+          if (n >= 2) { planItems = n; planRound = round; }
+        }
         /* Empty-but-thinking replies: the model spent everything inside its
          * thinking block and produced neither prose nor a tool call. Ending
          * the run here looks like a silent success ("已完成" with nothing in
@@ -964,6 +991,27 @@ async function runAgent(params) {
               (verdictInfo && verdictInfo.title ? verdictInfo.title : '没有任何实际操作') +
               '）。请现在直接调用工具完成任务，不要只描述计划或说"已完成"。' +
               '如果确实不需要工具（纯问答），就直接回答并说明为什么不需要。'
+          });
+          continue;
+        }
+        /* 清单列了 N 项、只委派了 1 项就想收尾：提醒一次，把剩下的项补完。
+         * 只提醒一次，也不在子代理里触发。 */
+        if (depth === 0 && !planNudged && isSubtaskMode(config) &&
+            planItems >= 2 && taskState.subtasks > 0 && taskState.subtasks < planItems &&
+            round < config.maxToolRounds &&
+            /* 只在模型「宣布收尾」时才提醒：它若正在描述下一步动作，别打断。 */
+            /完成|汇总|搞定|finished|done/i.test(shown)) {
+          planNudged = true;
+          const left = planItems - taskState.subtasks;
+          phase('清单还有 ' + left + ' 项未委派，已要求继续');
+          emit({ type: 'notice', text: '你列的清单有 ' + planItems + ' 项，目前只完成 ' +
+            taskState.subtasks + ' 个子任务，已要求继续（还剩 ' + left + ' 项）' });
+          convo.push({ role: 'assistant', content: content });
+          convo.push({
+            role: 'user',
+            content: 'PLAN INCOMPLETE: 你开头列的清单有 ' + planItems + ' 项，但目前只完成了 ' +
+              taskState.subtasks + ' 个子任务，还有 ' + left + ' 项没有结论。' +
+              '请立刻为下一项调用 runSubtask（一项一次调用），全部有结论后再写汇总。'
           });
           continue;
         }
@@ -1099,6 +1147,7 @@ module.exports = {
   stripToolTemplateFragments,
   MAX_ERROR_CHARS,
   splitInlineThinking,
+  countPlanItems,
   isShellCommandAllowed,
   isSubtaskMode,
   isWriteConfirm,
