@@ -765,7 +765,7 @@ try {
 
   check('manifest: 1.11.0, no built-in endpoint/model, 21 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.6');
+    assert.strictEqual(manifest.version, '1.11.7');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -814,7 +814,7 @@ try {
 
   /* ---- chat transcript look (v1.11.6) ---- */
 
-  check('chat UI: user and AI bubbles are visually distinct; flags can be reset', function () {
+  check('chat UI: user/AI turns are distinct, turns are split, flags can be reset', function () {
     const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.css'), 'utf8');
     const user = /\.msg\.user\s*\{([\s\S]*?)\}/.exec(css);
     const assistant = /\.msg\.assistant\s*\{([\s\S]*?)\}/.exec(css);
@@ -825,6 +825,16 @@ try {
     assert.ok(/border-left:/.test(user[1]) && /border-left:/.test(assistant[1]), 'both sides need a left rail');
     assert.ok(/::before/.test(css) && /content:\s*'你'/.test(css) && /content:\s*'AI'/.test(css),
       'speaker labels must not depend on colour alone');
+
+    // v1.11.7: 一次回答结束与下一问之间要有分割线
+    const divider = /\.msg\.divider\s*\{([\s\S]*?)\}/.exec(css);
+    assert.ok(divider, 'turn divider rule must exist');
+    assert.ok(/border-top:\s*1px/.test(divider[1]), 'divider must be a hairline');
+    const chatJs = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
+    assert.ok(/function addTurnDivider\(\)/.test(chatJs), 'addTurnDivider must exist');
+    assert.ok(/if \(role === 'user'\) \{ addTurnDivider\(\); \}/.test(chatJs),
+      'every user turn after the first must be preceded by a divider');
+    assert.ok(/classList\.contains\('divider'\)/.test(chatJs), 'divider must not be doubled');
 
     const view = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
     assert.ok(/id="resetFlags"/.test(view), 'menu must offer a reset for the runtime flags');

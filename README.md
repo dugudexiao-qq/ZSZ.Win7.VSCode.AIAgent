@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.11.6-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.11.7-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -46,9 +46,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.6** 的附件 `zsz-win7-vscode-aiagent-1.11.6.vsix`（约 168 KB）
-   （直链：[Releases/download/v1.11.6](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.6/zsz-win7-vscode-aiagent-1.11.6.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.6.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.7** 的附件 `zsz-win7-vscode-aiagent-1.11.7.vsix`（约 168 KB）
+   （直链：[Releases/download/v1.11.7](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.7/zsz-win7-vscode-aiagent-1.11.7.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.7.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
@@ -109,6 +109,7 @@
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.11.7**：一次完整回答结束与下一次提问之间加入横向分割线（居中细线 + 小圆点），长对话里「上一轮到哪结束、这一问从哪开始」一眼可见；重放历史时同样保留分割线，不会重复插入。
 - **v1.11.6**：对话记录里用户输入与 AI 回答明显区分：用户气泡右侧缩进、蓝色左竖条并标注「你」，AI 回答贴左、淡底加灰色左竖条并标注「AI」，窄面板自动收窄缩进；菜单新增「运行选项复位为默认」，解决老版本升级后写入/确认开关颜色与新装不一致（那是设置项保留了旧值，不是样式问题）。
 - **v1.11.5**：经验记忆更准：同一工具连续失败时保留每条不同的错误（不再只记第一条），修好后逐条总结；「上一轮没修好、下一轮才修好」也能沉淀；同类经验再次命中只累加命中次数，不再重复播报「已存入经验记忆」。
 - **v1.11.4**：修复「关闭面板或切换对话后聊天记录消失」：面板重开与切换会话时自动把持久化的对话历史重放进新页面（长导入内容截断显示，完整内容仍在上下文），切换到新对话则清屏。

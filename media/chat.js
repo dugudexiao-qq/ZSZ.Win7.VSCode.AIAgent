@@ -168,7 +168,21 @@
 
   function scrollDown() { messagesEl.scrollTop = messagesEl.scrollHeight; }
 
+  /* 回合分割线：一次完整回答结束后，下一条用户消息之前插一条横线，
+   * 让「上一轮到此结束、下面是新的一问」有明确的视觉停顿。只在已有内容、
+   * 且上一条不是分割线时插入，重放历史时同样生效。 */
+  function addTurnDivider() {
+    if (!messagesEl.firstChild) { return; }
+    var last = messagesEl.lastChild;
+    if (last && last.classList && last.classList.contains('divider')) { return; }
+    var el = document.createElement('div');
+    el.className = 'msg divider';
+    el.setAttribute('role', 'separator');
+    messagesEl.appendChild(el);
+  }
+
   function addMessage(role, text) {
+    if (role === 'user') { addTurnDivider(); }
     var el = document.createElement('div');
     el.className = 'msg ' + role;
     if (role === 'assistant' || role === 'error') {
