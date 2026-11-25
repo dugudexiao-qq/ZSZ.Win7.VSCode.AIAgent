@@ -914,6 +914,13 @@ async function runAgent(params) {
       if (inline.thinking) { emit({ type: 'thought', text: inline.thinking }); }
       const visible = inline.visible;
       answer = visible;
+      /* 记下模型自己列的编号清单。放在工具调用分支之前：模型常常先写
+       * 「1) … 2) …」再在同一回复里发 runSubtask，只在不带调用的分支里
+       * 记会漏掉计划。只记最早出现的那一份，只认根代理。 */
+      if (depth === 0 && planRound < 0) {
+        const n = countPlanItems(visible);
+        if (n >= 2) { planItems = n; planRound = round; }
+      }
 
       const calls = parseToolCalls(content);
       const call = calls[0] || null;
@@ -942,11 +949,6 @@ async function runAgent(params) {
           ? (stripToolTemplateFragments(visible) || '（模型输出的调用模板不完整，已忽略。可重试或直接描述需求。）')
           : visible;
         answer = shown;
-        /* 记下模型自己列的编号清单（只在第一处出现时记，且只认根代理）。 */
-        if (depth === 0 && planRound < 0) {
-          const n = countPlanItems(shown);
-          if (n >= 2) { planItems = n; planRound = round; }
-        }
         /* Empty-but-thinking replies: the model spent everything inside its
          * thinking block and produced neither prose nor a tool call. Ending
          * the run here looks like a silent success ("已完成" with nothing in

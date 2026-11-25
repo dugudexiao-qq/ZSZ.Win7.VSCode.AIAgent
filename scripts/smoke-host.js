@@ -347,7 +347,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.8');
+  assert.strictEqual(info.version, '1.11.9');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -546,7 +546,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.8');
+  assert.strictEqual(state.version, '1.11.9');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -668,6 +668,22 @@ async function main() {
   assert.ok(events.some(function (e) { return e.type === 'delta' && /已汇总子任务结论/.test(e.text || ''); }),
     'parent must finish only after the subtask results');
   console.log('  PASS  runSubtask executes an isolated child agent and feeds its conclusion back');
+
+  /* v1.11.8: 模型列了 2 项却只委派 1 项就宣布完成时，要自动提醒一次并补完。 */
+  scriptedResponses.length = 0;
+  scriptedResponses.push('1) 核对文件清单\n2) 核对目录结构\n先做第 1 项：\n{"tool":"runSubtask","args":{"goal":"核对工作区文件清单"}}');
+  scriptedResponses.push('子任务结论：共 1 个文件。');
+  scriptedResponses.push('已完成第一项，汇总结束。');   // 漏项：这里应被提醒
+  scriptedResponses.push('{"tool":"runSubtask","args":{"goal":"核对工作区目录结构"}}');
+  scriptedResponses.push('子任务结论：只有根目录一层。');
+  scriptedResponses.push('清单两项都已完成。');
+  events.length = 0;
+  await viewMessageHandler({ type: 'send', text: '请按清单核对文件与目录' });
+  assert.ok(events.some(function (e) { return e.type === 'notice' && /清单有 2 项/.test(e.text || ''); }),
+    'an incomplete plan must trigger exactly one nudge');
+  assert.ok(events.filter(function (e) { return e.type === 'subtask' && e.status === 'start'; }).length === 2,
+    'the nudge must lead to the second subtask actually running');
+  console.log('  PASS  an incomplete numbered plan is nudged once and finished');
 
   /* Sub-task depth is bounded: a child cannot recursively spawn forever. */
   const subCfg = runtime.getConfig();
