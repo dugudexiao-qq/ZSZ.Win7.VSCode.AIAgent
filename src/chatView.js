@@ -487,6 +487,16 @@ class ChatViewProvider {
     this._postTo(entry, { type: 'attachments', items: this._attachments.slice() });
   }
 
+  /* 导入的内容在导入那一刻就已经写进对话历史了，输入框上方那排标签只是
+   * 「我刚导入了什么」的临时提示。消息一发出，这份文件就属于上一轮，标签
+   * 必须跟着收起——继续挂着会让人以为这条消息还带着附件、或者下次还要再发
+   * 一次，也把输入区挤得越来越长。 */
+  _consumeAttachments() {
+    if (!this._attachments.length) { return; }
+    this._attachments = [];
+    this._post({ type: 'attachments', items: [] }, false);
+  }
+
   _onMessage(msg, entry) {
     if (!msg || !msg.type) { return; }
     switch (msg.type) {
@@ -653,6 +663,8 @@ class ChatViewProvider {
     this._cts = new vscode.CancellationTokenSource();
     this._history.push({ role: 'user', content: text });
     this._touchSessionTitle(text);
+    /* 引入的文件已经在历史里，标签到此为止（「回答结束后还留在输入框」）。 */
+    this._consumeAttachments();
 
     try {
       /* 自动上下文压缩（v1.10）：历史超过 agent 的同款限额时，先把被淘汰的

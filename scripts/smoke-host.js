@@ -347,7 +347,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.12');
+  assert.strictEqual(info.version, '1.11.13');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -546,7 +546,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.12');
+  assert.strictEqual(state.version, '1.11.13');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -624,6 +624,26 @@ async function main() {
   const mixedDeltas = events.filter(function (e) { return e.type === 'delta'; });
   assert.ok(mixedDeltas.some(function (e) { return /文件读完了/.test(e.text); }), 'final prose answer must reach the webview');
   console.log('  PASS  mixed prose + JSON tool calls execute for real (no false "done")');
+
+  /* 导入的文件属于「这一轮」：内容在导入那一刻就进了对话历史，输入框上方那排
+   * 标签只是临时提示。消息一发出就得收起，否则回答结束后它还挂着，看起来像
+   * 附件没发出去 / 下一次还要重发一次。 */
+  scriptedResponses.length = 0;
+  scriptedResponses.push('已阅读导入的文件。');
+  registeredProvider.addContextMessage('以下是我导入的文件《a.txt》\nhello', '已导入文件：a.txt',
+    { name: 'a.txt', kind: 'text', chars: 5 });
+  assert.strictEqual(registeredProvider.getAttachments().length, 1,
+    'importing a file must put one chip above the input box');
+  assert.ok(events.some(function (e) { return e.type === 'file'; }),
+    'the transcript must keep its own record of the import');
+  events.length = 0;
+  await viewMessageHandler({ type: 'send', text: '看下导入的文件' });
+  assert.deepStrictEqual(registeredProvider.getAttachments(), [],
+    'imported files must leave the composer once the message is sent');
+  const attachClear = events.filter(function (e) { return e.type === 'attachments'; }).pop();
+  assert.ok(attachClear && Array.isArray(attachClear.items) && attachClear.items.length === 0,
+    'the webview must be told to hide the attachment bar after sending');
+  console.log('  PASS  imported files leave the composer once the message is sent');
 
   /* Long conversations must not be cut off after 10 rounds / 20 messages. */
   settings['win7Agent.maxHistoryMessages'] = 200;

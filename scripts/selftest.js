@@ -785,9 +785,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.11.12, no built-in endpoint/model, 21 commands, all activation events', function () {
+  check('manifest: 1.11.13, no built-in endpoint/model, 21 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.12');
+    assert.strictEqual(manifest.version, '1.11.13');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -895,6 +895,22 @@ try {
     /* 打包器按扩展名过滤 media/，svg 必须在白名单里，否则详情页图片是空的。 */
     const pack = fs.readFileSync(path.join(__dirname, 'pack-vsix.js'), 'utf8');
     assert.ok(/addDir\('media'[\s\S]{0,160}svg/.test(pack), 'packer must include media/**/*.svg');
+  });
+
+  /* v1.11.13: 导入的文件只属于「刚导入」这一小段时间，消息一发出去就该从输入框
+   * 上方消失——内容早在导入时就进了历史，标签继续挂着会让人以为还没发出去。 */
+  check('imported files are dropped from the composer once the message is sent', function () {
+    const view = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
+    assert.ok(/_consumeAttachments\(\)\s*\{/.test(view), 'host must have a way to drop the chips');
+    const send = /async _handleSend\(text, entry\)\s*\{([\s\S]*?)\n  \}/.exec(view);
+    assert.ok(send, '_handleSend must exist');
+    assert.ok(/this\._consumeAttachments\(\)/.test(send[1]),
+      '_handleSend must clear the attachment chips after accepting the message');
+    assert.ok(/type: 'attachments', items: \[\]/.test(view),
+      'clearing must tell the webview to hide the bar, not just wipe host state');
+    const chat = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
+    assert.ok(/attachEl\.hidden = attachments\.length === 0/.test(chat),
+      'empty list must hide the attachment bar');
   });
 
   console.log('\nAll ' + passed + ' self-tests passed.');
