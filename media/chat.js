@@ -56,6 +56,13 @@
   var queue = [];
   var queuePaused = false;
   var queueSeq = 0;
+  /* 这一轮失败的类别（宿主随 error 事件带来）。超时属于环境问题：模型服务
+   * 慢、GGUF 刚加载、内网抖动，和队列里下一条任务无关，所以接着发；
+   * 认证失败 / 地址写错 / 用户 Stop 则继续发只会同样失败，照旧暂停。
+   * 连续超时到上限才停，避免在已经死掉的服务上空转。 */
+  var MAX_TIMEOUT_STREAK = 2;
+  var timeoutStreak = 0;
+  var lastErrorKind = '';
 
   /* 已导入的文件：显示在输入框正上方，× 可以撤销这一次导入。
    * 文件正文已经在对话历史里了，标签是它的可见凭据与撤回入口。 */
@@ -644,6 +651,8 @@
     renderAttachments();
     queue = [];
     queuePaused = false;
+    timeoutStreak = 0;
+    lastErrorKind = '';
     renderQueue();
   }
 
@@ -715,6 +724,8 @@
     head.appendChild(title);
     var resume = qbtn('继续队列', function () {
       queuePaused = false;
+      /* 手动继续 = 重新开始计数，否则上一轮的超时会让它立刻又被暂停。 */
+      timeoutStreak = 0;
       renderQueue();
       pumpQueue();
     });
@@ -802,6 +813,7 @@
     currentBubble = null;
     currentRaw = '';
     hadError = false;
+    lastErrorKind = '';
     lastCheck = null;
     resetToolDedupe();
     phaseText.textContent = '正在准备请求…';
@@ -1410,6 +1422,9 @@
         break;
       case 'error':
         hadError = true;
+        /* 宿主给的失败类型：timeout / confirm-timeout / cancelled / other。
+         * 老宿主没有 kind，按 other 处理（保守：暂停）。 */
+        lastErrorKind = msg.kind || (msg.queueSafe ? 'timeout' : 'other');
         abandonPendingTool('已中断');
         closeThoughtSeg();
         addMessage('error', msg.text || 'Unknown error');
@@ -1452,14 +1467,29 @@
           phaseDot.className = lastCheck && lastCheck.level === 'fail' ? 'pdot' : 'pdot done';
         }
         if (queue.length) {
-          if (hadError) {
+          /* 超时不算「队列的错」：上一轮等太久被掐断，和排队的下一条内容无关，
+           * 接着发；连续超时到上限（多半是服务已经死了）才停下来等人。 */
+          var keepGoing = hadError && lastErrorKind === 'timeout' && timeoutStreak < MAX_TIMEOUT_STREAK;
+          if (keepGoing) {
+            timeoutStreak += 1;
+            addMessage('subtask', '[系统] 上一轮请求超时，队列继续发送剩余 ' + queue.length + ' 条');
+            phaseText.textContent = '上一轮超时，继续发送队列剩余 ' + queue.length + ' 条';
+            phaseText.className = 'ptext awaiting';
+            setTimeout(pumpQueue, 60);
+          } else if (hadError) {
             queuePaused = true;
             renderQueue();
-            phaseText.textContent = '出错了，队列已暂停（点「继续队列」发送剩余 ' + queue.length + ' 条）';
+            phaseText.textContent = (lastErrorKind === 'timeout'
+              ? '连续 ' + timeoutStreak + ' 条请求超时，队列已暂停（点「继续队列」发送剩余 ' + queue.length + ' 条）'
+              : '出错了，队列已暂停（点「继续队列」发送剩余 ' + queue.length + ' 条）');
             phaseText.className = 'ptext failed';
           } else {
+            /* 这一轮成功了：超时计数清零，下一条正常发。 */
+            timeoutStreak = 0;
             setTimeout(pumpQueue, 60);
           }
+        } else if (!hadError) {
+          timeoutStreak = 0;
         }
         break;
       case 'mentionFiles':
@@ -1494,6 +1524,8 @@
         resetToolDedupe();
         queue = [];
         queuePaused = false;
+        timeoutStreak = 0;
+        lastErrorKind = '';
         renderQueue();
         attachments = [];
         renderAttachments();

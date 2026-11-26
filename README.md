@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.11.17-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.11.18-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -46,9 +46,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.17** 的附件 `zsz-win7-vscode-aiagent-1.11.17.vsix`（约 190 KB）
-   （直链：[Releases/download/v1.11.17](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.17/zsz-win7-vscode-aiagent-1.11.17.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.17.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.18** 的附件 `zsz-win7-vscode-aiagent-1.11.18.vsix`（约 190 KB）
+   （直链：[Releases/download/v1.11.18](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.18/zsz-win7-vscode-aiagent-1.11.18.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.18.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
@@ -71,7 +71,7 @@
 - **4 个运行开关**（标题栏下方）：写入（只读/可写）、写入确认、命令确认、子任务
 - **下拉菜单**：清空对话、API Key、长期要求（点开后在输入框里直接写，回车即记住）、经验记忆、模型配置、新面板打开、服务地址
 - **多会话**：底部「切换对话 ▾」新建/切换/删除对话，各自独立上下文
-- **输入队列**：回复未结束可继续输入，队列可编辑、撤回、调序
+- **输入队列**：回复未结束可继续输入，队列可编辑、撤回、调序；某轮超时后队列自动接着发（连续超时才暂停）
 - **过程展示**：工具调用默认折叠一行（如 `✎ 查看文件：src/agent.js · 0.8 s`），失败行直接写中文原因，点标题展开详情
 - **绿色「已完成」≠ 事情真做成了**：以回答下方的自检行为准
 
@@ -109,6 +109,7 @@
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.11.18**：修「任务超时后排队消息卡住」。以前任何一轮出错都会把暂存队列置为「已暂停」，得手动点「继续队列」；可超时（模型服务慢、GGUF 刚加载、内网抖动）跟队列里下一条任务没关系，下一条往往很短就能跑通。现在宿主把失败分类随错误一起发给面板（`src/failure.js`）：超时 → 队列继续，并在对话里留一行「上一轮请求超时，队列继续发送剩余 N 条」；连续 2 条超时才暂停（多半是服务真的挂了），认证失败 / 地址写错 / 弹窗没人点 / 手动 Stop 仍然暂停。一键「继续队列」会重置这个计数。
 - **v1.11.17**：修「@ 引用只列出一部分文件」。清单以前来自 VS Code 的 `findFiles`：上限只有 300 个、会被 `files.exclude`/`search.exclude` 过滤，而且刚打开窗口、搜索索引还没就绪时首次查询会返回空或残缺——这正是「首次载入打 @ 很多文件找不到」的原因。现在扩展自己按广度优先遍历工作区（`workspace.fs`），只跳过 `node_modules`/`.git` 这类目录，上限 4000 个文件、深度 12、6 秒超时；面板一出现就在后台预热索引，第一次打 @ 不用等；清单为空或读取失败会在弹层里说明原因，并提供「重新读取工作区文件」。拖拽文件按名匹配也改用同一份清单，命中率一并提高。
 - **v1.11.16**：修「长期要求」输入不进去。以前要先在列表里拉到「记住一条新要求」再回车，弹出第二层输入框；直接在列表里打字回车，要么没反应，要么把过滤命中的第一条旧要求删了。现在这个列表本身就是输入框：打字时第一行变成「记住：<你打的字>」，回车即新增；重复内容提示「已经记过」，不会重复添加。删除旧要求改为二次确认，避免空回车误删。同时去掉 `ignoreFocusOut`（老版本上会让输入框留着却收不到键盘），命令面板里也能直接搜到「长期要求」。
 - **v1.11.15**：撤掉 v1.11.12 加进详情页的 4 张自绘示意图——排版和字形在 VS Code 的 Markdown 渲染里都不好看，反而干扰阅读。README 回到纯文字条目，自测加了反向用例（README 不许再嵌 `media/docs` 图片、该目录不许留残图），避免以后又混进来。

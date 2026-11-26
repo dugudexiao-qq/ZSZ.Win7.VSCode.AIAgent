@@ -256,6 +256,10 @@ function makeView() {
 let callCount = 0;
 let lastAuth = 'unset';
 let failNext = 0;
+let failStatus = 503;
+/* 故意拖慢响应：用来验证「整轮请求超时」这条路径（宿主必须把它标成
+ * queueSafe，面板才不会把排队的下一条也一起冻住）。 */
+let delayNext = 0;
 const scriptedResponses = [];
 const server = http.createServer(function (req, res) {
   let body = '';
@@ -265,8 +269,17 @@ const server = http.createServer(function (req, res) {
     lastAuth = req.headers.authorization;
     if (failNext > 0) {
       failNext -= 1;
-      res.writeHead(503, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: { message: 'mock overloaded' } }));
+      res.writeHead(failStatus, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'mock failure' } }));
+      return;
+    }
+    if (delayNext > 0) {
+      const wait = delayNext;
+      delayNext = 0;
+      setTimeout(function () {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'too late' } }] }));
+      }, wait);
       return;
     }
     const parsed = body ? JSON.parse(body) : null;
@@ -399,7 +412,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.17');
+  assert.strictEqual(info.version, '1.11.18');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -627,7 +640,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.17');
+  assert.strictEqual(state.version, '1.11.18');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1283,6 +1296,32 @@ async function main() {
     .map(function (e) { return e.text; }).join('').indexOf('重试成功了') !== -1, 'the retried answer must arrive');
   assert.strictEqual(events.filter(function (e) { return e.type === 'error'; }).length, 0, 'no error must reach the user');
   console.log('  PASS  a transient 503 is retried automatically and announced');
+
+  /* v1.11.18：失败的「类型」必须随 error 事件到达面板。超时 → 队列继续；
+   * 401 这类配置错误 → 队列暂停。分类错了，要么白等好几轮，要么把好端端的
+   * 队列冻住。 */
+  settings['win7Agent.timeoutMs'] = 150;
+  delayNext = 1200;
+  events.length = 0;
+  await viewMessageHandler({ type: 'send', text: '这条会超时' });
+  const timeoutErr = events.filter(function (e) { return e.type === 'error'; }).pop();
+  assert.ok(timeoutErr, 'a wall-clock timeout must surface as an error event');
+  assert.strictEqual(timeoutErr.kind, 'timeout', 'the timeout must be labelled so the queue can continue');
+  assert.strictEqual(timeoutErr.queueSafe, true);
+  assert.strictEqual(events.filter(function (e) { return e.type === 'done'; }).length, 1,
+    'the round must still finish cleanly (busy released) after a timeout');
+
+  settings['win7Agent.timeoutMs'] = 1000000;
+  failStatus = 401;
+  failNext = 1;
+  events.length = 0;
+  await viewMessageHandler({ type: 'send', text: '这条会 401' });
+  const authErr = events.filter(function (e) { return e.type === 'error'; }).pop();
+  assert.ok(authErr, 'a 401 must reach the user');
+  assert.strictEqual(authErr.kind, 'other', 'a config error is not a timeout');
+  assert.strictEqual(authErr.queueSafe, false, 'a 401 must pause the queue');
+  failStatus = 503;
+  console.log('  PASS  error events carry a queue policy: timeout continues, 401 pauses');
 
   const diagRoot = fsmod.mkdtempSync(path.join(os.tmpdir(), 'zsz-diag-'));
   const savedFoldersForDiag = vscodeStub.workspace.workspaceFolders;

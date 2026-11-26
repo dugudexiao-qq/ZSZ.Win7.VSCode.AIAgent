@@ -8,6 +8,7 @@ const { runAgent } = require('./agent');
 const compact = require('./compact');
 const snapLib = require('./snapshots');
 const fileIndex = require('./fileIndex');
+const failure = require('./failure');
 
 const EXT_ID = manifest.publisher + '.' + manifest.name;
 
@@ -735,8 +736,13 @@ class ChatViewProvider {
         this._post({ type: 'snapshot', id: entry.id, files: snapLib.describeFiles(entry.files) }, false);
       }
     } catch (err) {
-      runtime.log('runAgent failed: ' + (err && err.message ? err.message : String(err)));
-      this._post({ type: 'error', text: err && err.message ? err.message : String(err) }, false);
+      const text = err && err.message ? err.message : String(err);
+      /* 失败带类型：面板据此决定排队的下一条要不要接着发。超时（模型服务
+       * 慢 / 刚加载 / 网络抖动）和这一轮任务本身无关，队列继续；
+       * 认证、地址、用户 Stop 之类继续发只会同样失败，仍然暂停。 */
+      const kind = failure.classify(text);
+      runtime.log('runAgent failed (' + kind + '): ' + text);
+      this._post({ type: 'error', text: text, kind: kind, queueSafe: failure.queueSafe(kind) }, false);
     } finally {
       if (this._cts) { this._cts.dispose(); }
       this._cts = null;

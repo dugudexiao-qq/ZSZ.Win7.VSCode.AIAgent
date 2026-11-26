@@ -27,6 +27,7 @@ const fileImport = require('../src/fileImport');
 const proc = require('../src/processRunner');
 const endpoint = require('../src/endpoint');
 const taskCheck = require('../src/taskCheck');
+const failure = require('../src/failure');
 const md = require('../media/markdown');
 const manifest = require('../package.json');
 
@@ -797,9 +798,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.11.17, no built-in endpoint/model, 22 commands, all activation events', function () {
+  check('manifest: 1.11.18, no built-in endpoint/model, 22 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.17');
+    assert.strictEqual(manifest.version, '1.11.18');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -907,6 +908,40 @@ try {
    * 窗口时可能返回空/残缺，还会被 files.exclude 吃掉；表现就是「@ 里少了一大半
    * 文件」。这里用假树验证：跳过 node_modules/.git、广度优先、预算截断、坏目录
    * 不崩、空结果与无工作区都不进缓存。 */
+  /* v1.11.18：超时后队列要继续，其它错误照旧暂停——分类错了会连着白等
+   * 好几轮 1000 秒，所以每种真实文案都钉一遍。 */
+  check('failure kinds: only a real timeout keeps the queue running', function () {
+    /* 聊天请求总时长到点（远端 / 本地两种翻法都要认） */
+    assert.strictEqual(failure.classify(
+      'Network problem: ETIMEDOUT: total request time exceeded 1000000 ms. If this machine needs an outbound proxy, set VS Code\'s http.proxy setting.'), 'timeout');
+    assert.strictEqual(failure.classify(
+      'Cannot reach the local model server (ETIMEDOUT: no data for 1000000 ms). Check that llama-server / Ollama / LM Studio is running.'), 'timeout');
+    assert.strictEqual(failure.classify('请求超时，已中止'), 'timeout');
+
+    /* 用户点 Stop：队列也该停，不自动续 */
+    assert.strictEqual(failure.classify('Cancelled.'), 'cancelled');
+    assert.strictEqual(failure.classify('cancelled'), 'cancelled');
+
+    /* 弹窗没人点：不是环境问题，继续发只会一路超时 */
+    assert.strictEqual(failure.classify(
+      'CONFIRM TIMEOUT: nobody answered the write confirmation within 300 s. This write was NOT performed.'), 'confirm-timeout');
+
+    /* 认证 / 地址 / 配额：下一条只会同样失败 */
+    assert.strictEqual(failure.classify('Authentication failed (HTTP 401). Check the API key with the "Set API Key" command.'), 'other');
+    assert.strictEqual(failure.classify('Endpoint not found (HTTP 404). Check win7Agent.baseUrl.'), 'other');
+    assert.strictEqual(failure.classify(''), 'other');
+
+    assert.strictEqual(failure.queueSafe('timeout'), true);
+    ['cancelled', 'confirm-timeout', 'other'].forEach(function (kind) {
+      assert.strictEqual(failure.queueSafe(kind), false, kind + ' must pause the queue');
+    });
+
+    /* 宿主必须把类型随 error 事件带出去，否则面板只能猜。 */
+    const cv = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
+    assert.ok(/failure\.classify\(text\)/.test(cv), 'the host must classify the failure');
+    assert.ok(/type: 'error', text: text, kind: kind/.test(cv), 'the error event must carry the kind');
+  });
+
   checkAsync('@ mention index walks the workspace itself, and never caches an empty result', async function () {
     const fi = require('../src/fileIndex');
     const tree = {

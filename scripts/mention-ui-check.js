@@ -470,4 +470,114 @@ check('profiles menu button exists and posts the profiles message (v1.10.0)', fu
   assert.strictEqual(req.length, 1, 'clicking the button must open the profile switcher');
 });
 
-console.log('\nMention UI check passed: ' + pass + ' scenarios.');
+/* ---- v1.11.18 队列策略：超时继续，其它错误暂停 ----
+ * 用真 DOM 桩跑 media/chat.js，模拟「一轮超时 + 队列里还有消息」，
+ * 断言下一条会被真的发出去，而不是停在「已暂停」。 */
+
+function tick(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+function queueHead() {
+  const box = els.queue;
+  return box && !box.hidden ? box.children[0] : null;
+}
+function queuePaused() {
+  const head = queueHead();
+  return !!(head && /已暂停/.test(head.textContent));
+}
+function sendsAfter(mark) {
+  return posted.slice(mark).filter(function (m) { return m.type === 'send'; });
+}
+/* 模拟一轮结束：先 busy，再把一条消息塞进队列，然后按给定类型报错收尾。 */
+async function round(kind, text, queuedText) {
+  hostMessage({ type: 'busy', value: true, startedAt: Date.now() });
+  input.value = queuedText;
+  fire(els.send, 'click');
+  assert.ok(els.queue.hidden === false, 'precondition: the message must be queued');
+  const mark = posted.length;
+  hostMessage({ type: 'error', text: text, kind: kind });
+  hostMessage({ type: 'done' });
+  await tick(120);
+  return sendsAfter(mark);
+}
+
+const scenarios = [];
+function checkAsync(name, fn) { scenarios.push({ name: name, fn: fn }); }
+
+checkAsync('a timed-out turn keeps the queue running instead of pausing it (v1.11.18)', async function () {
+  hostMessage({ type: 'cleared' });
+  posted.length = 0;
+  const sends = await round('timeout',
+    'Network problem: ETIMEDOUT: total request time exceeded 1000000 ms.', '接着做第二件事');
+  assert.strictEqual(sends.length, 1, 'the queued message must be sent after a timeout');
+  assert.strictEqual(sends[0].text, '接着做第二件事');
+  assert.strictEqual(queuePaused(), false, 'the queue must not be paused by a timeout');
+  const notes = els.messages.children.filter(function (c) { return c.className === 'msg subtask'; });
+  assert.ok(notes.some(function (n) { return /超时/.test(n.textContent) && /队列继续发送/.test(n.textContent); }),
+    'the transcript must say why it kept going');
+});
+
+checkAsync('authentication errors still pause the queue (no point hammering a dead key)', async function () {
+  hostMessage({ type: 'cleared' });
+  posted.length = 0;
+  const sends = await round('other',
+    'Authentication failed (HTTP 401). Check the API key with the "Set API Key" command.', '这条不该自动发');
+  assert.strictEqual(sends.length, 0, 'a 401 must not be retried by the queue');
+  assert.strictEqual(queuePaused(), true, 'the queue must pause and wait for a human');
+  const head = queueHead();
+  const resume = head.children.filter(function (c) { return c.className === 'qbtn'; })[0];
+  assert.ok(resume && resume.hidden === false, 'the resume button must be offered');
+});
+
+checkAsync('a confirm-timeout is treated like a human decision, not like a slow model', async function () {
+  hostMessage({ type: 'cleared' });
+  posted.length = 0;
+  const sends = await round('confirm-timeout',
+    'CONFIRM TIMEOUT: nobody answered the write confirmation within 300 s.', '这条也不该自动发');
+  assert.strictEqual(sends.length, 0, 'an unanswered dialog must not auto-continue');
+  assert.strictEqual(queuePaused(), true);
+});
+
+checkAsync('after repeated timeouts the queue pauses, so a dead server is not hammered', async function () {
+  hostMessage({ type: 'cleared' });
+  const msg = 'Cannot reach the local model server (ETIMEDOUT: no data for 1000000 ms).';
+  posted.length = 0;
+  let sends = await round('timeout', msg, '第一条');
+  assert.strictEqual(sends.length, 1, 'first timeout: keep going');
+  sends = await round('timeout', msg, '第二条');
+  assert.strictEqual(sends.length, 1, 'second timeout: still keep going');
+  sends = await round('timeout', msg, '第三条');
+  assert.strictEqual(sends.length, 0, 'the third consecutive timeout must stop the queue');
+  assert.strictEqual(queuePaused(), true);
+  assert.ok(/连续 \d+ 条请求超时/.test(els.phaseText.textContent),
+    'the phase line must explain the pause: ' + els.phaseText.textContent);
+});
+
+checkAsync('one successful turn resets the streak, so a later timeout still continues', async function () {
+  hostMessage({ type: 'cleared' });
+  hostMessage({ type: 'busy', value: true, startedAt: Date.now() });
+  hostMessage({ type: 'start' });
+  hostMessage({ type: 'delta', text: '好的' });
+  hostMessage({ type: 'done' });
+  const sends = await round('timeout', 'ETIMEDOUT: no data for 1000000 ms.', '成功之后的一条');
+  assert.strictEqual(sends.length, 1, 'the counter must reset after a successful round');
+  assert.strictEqual(queuePaused(), false);
+});
+
+(async function () {
+  let failure = null;
+  for (const sc of scenarios) {
+    try {
+      await sc.fn();
+      pass += 1;
+      console.log('  PASS  ' + sc.name);
+    } catch (err) {
+      console.error('  FAIL  ' + sc.name + '\n        ' + (err && err.message ? err.message : err));
+      process.exitCode = 1;
+      failure = err;
+      break;
+    }
+  }
+  /* 收掉计时器（busy 的 setInterval 会把进程挂住，失败时尤其明显）。 */
+  hostMessage({ type: 'busy', value: false, elapsedMs: 100 });
+  await tick(20);
+  if (!failure) { console.log('\nMention UI check passed: ' + pass + ' scenarios.'); }
+})();
