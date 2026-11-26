@@ -507,6 +507,10 @@ check('a scheduled turn carries a clock badge, live and after a replay', functio
   let last = users[users.length - 1];
   assert.ok(/02:00/.test(last.textContent), 'the badge must show the fire time: ' + last.textContent);
   assert.ok(/定时/.test(last.textContent), 'the badge must say 定时');
+  /* Win7 的字体不一定有 U+23F0（闹钟 emoji）：缺字时是一个豆腐块，字形还是
+   * 黑白的。角标只用文字，别再引入任何 emoji。 */
+  assert.ok(!/[\u{1F300}-\u{1FAFF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}]/u.test(last.textContent),
+    'the badge must not depend on emoji glyphs the Win7 fonts may lack: ' + last.textContent);
   assert.ok(/夜里跑的任务/.test(last.textContent), 'the task text must still be there');
 
   hostMessage({ type: 'replay', items: [

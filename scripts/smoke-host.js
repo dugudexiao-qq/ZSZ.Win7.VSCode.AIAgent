@@ -1563,6 +1563,13 @@ async function main() {
   const chatSource = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
   const cssSource = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.css'), 'utf8');
   assert.ok(!/id="schedbtn" class="menu-item"/.test(cvSource), 'the menu must not keep a second 定时 entry');
+  /* 发送行里所有按钮同一个长相：Send 以前是实心主按钮，和 Stop/Import 并排时两种外框。 */
+  const flatRule = cssSource.match(/#send[^{]*\{([^}]*)\}/) || [];
+  assert.ok(/#send[^{]*#schedbtn/.test(flatRule[0] || ''),
+    'Send and 定时 must be in the same outlined-button rule as Stop / Import / Save');
+  const flatBody = flatRule[1] || '';
+  assert.ok(/background:\s*transparent/.test(flatBody) && /border:\s*1px solid/.test(flatBody),
+    'the shared composer style must be a transparent fill with a 1px border');
   assert.ok(/scheduleDraft/.test(chatSource), 'the composer must hand the draft to the host');
   assert.ok(/case 'userMessage'/.test(chatSource), 'the webview must render host-initiated user bubbles');
   assert.ok(/\.msg-badge/.test(cssSource), 'scheduled bubbles need a visible badge');

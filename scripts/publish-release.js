@@ -15,6 +15,7 @@
  *   node scripts/publish-release.js --tag v1.12.3    one specific tag
  *   node scripts/publish-release.js --backfill       every dist/*.vsix missing somewhere
  *   node scripts/publish-release.js --force          rewrite an existing release body
+ *   node scripts/publish-release.js --replace        re-upload the same filename (hotfix in place)
  *   node scripts/publish-release.js --dry-run        print the plan, touch nothing
  *   node scripts/publish-release.js --notes a.md     use this text as the release body
  *   node scripts/publish-release.js --hosts gitcode  restrict to one host
@@ -48,10 +49,12 @@ const valueOf = (flag) => {
 
 const DRY = has('--dry-run');
 const FORCE = has('--force');
+/* 同一个版本号里的热修：文件名不变，先把旧附件删掉再传，否则两端都会因为
+ * 「同名附件已存在」而拒绝，或者留下一个永远下不到的旧包。 */
+const REPLACE = has('--replace');
 const BACKFILL = has('--backfill');
 const TAG = valueOf('--tag');
 const NOTES_FILE = valueOf('--notes');
-const FROM_GITHUB = !has('--no-github-body');
 const HOSTS = (valueOf('--hosts') || 'gitcode,github')
   .split(',')
   .map((h) => h.trim().toLowerCase())
@@ -200,19 +203,17 @@ async function gcList() {
   return all;
 }
 
-async function gcBody(tag) {
-  if (!FROM_GITHUB) return null;
-  const res = await fetch(`https://api.github.com/repos/${GH_REPO}/releases/tags/${tag}`, {
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'win7-agent-release' }
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return typeof data.body === 'string' && data.body.trim() ? stripFooter(data.body) : null;
-}
-
+/* Reuse the GitHub wording on GitCode. `ghExisting` is the release object from
+ * the list call, so read `.body` — passing the object itself used to stringify
+ * to "[object Object]" and quietly replace the notes with that. */
 function gcBodyFor(tag, ghExisting) {
   const version = tag.replace(/^v/, '');
-  const head = NOTES || (ghExisting ? stripFooter(ghExisting) : null) || `v${version}`;
+  const head =
+    NOTES ||
+    (ghExisting && typeof ghExisting.body === 'string' && ghExisting.body.trim()
+      ? stripFooter(ghExisting.body)
+      : null) ||
+    `v${version}`;
   return head + footer(version, 'gitcode');
 }
 
@@ -250,6 +251,19 @@ async function gcDropDeadAssets(tag, file) {
     console.log(`    （清掉一条空附件 ${asset.id}）`);
   }
   return dead.length;
+}
+
+/* Delete attachments with the same filename so --replace can upload again. */
+async function gcDropSameName(tag, file) {
+  const name = path.basename(file);
+  const rel = await api(`/repos/${OWNER}/${REPO}/releases/tags/${encodeURIComponent(tag)}`);
+  const hits = ((rel && rel.assets) || []).filter((a) => a.type === 'attach' && a.name === name);
+  for (const asset of hits) {
+    await api(`/repos/${OWNER}/${REPO}/releases/${encodeURIComponent(tag)}/attach_files/${asset.id}`, {
+      method: 'DELETE'
+    });
+    console.log(`    （删掉旧附件 ${asset.id}）`);
+  }
 }
 
 /* An attachment shows up in `assets` as soon as the PUT starts, but with
@@ -290,7 +304,9 @@ async function publishGitcode(tag, file, ctx) {
   const size = Math.round(fs.statSync(file).size / 1024);
   const rel = ctx.gcByTag.get(tag);
 
-  if (rel && !FORCE) {
+  if (rel && REPLACE && !DRY) await gcDropSameName(tag, file);
+
+  if (rel && !FORCE && !REPLACE) {
     const asset = await gcVerify(tag, file);
     if (asset) {
       console.log(`- ${tag}  GitCode 已存在（附件 ${size} KB）`);
@@ -310,7 +326,7 @@ async function publishGitcode(tag, file, ctx) {
     console.log(`- ${tag}  GitCode ${rel ? '将更新正文并补传附件' : '将创建'}，正文 ${body.length} 字，附件 ${size} KB`);
     return 'would';
   }
-  if (rel && FORCE) {
+  if (rel) {
     await api(`/repos/${OWNER}/${REPO}/releases/${encodeURIComponent(tag)}`, {
       method: 'PATCH',
       body: { tag_name: tag, name: `ZSZ Win7 AI Agent ${tag}`, body }
@@ -382,6 +398,15 @@ function ghHasAsset(rel, file) {
   );
 }
 
+async function ghDropSameName(rel, file) {
+  const name = path.basename(file);
+  const hits = ((rel && rel.assets) || []).filter((a) => a.name === name);
+  for (const asset of hits) {
+    await ghFetch(`${GH_API}/releases/assets/${asset.id}`, { method: 'DELETE' });
+    console.log(`    （删掉旧附件 ${asset.id}）`);
+  }
+}
+
 async function ghUpload(rel, file) {
   const name = path.basename(file);
   const res = await fetch(`${GH_UPLOADS}/releases/${rel.id}/assets?name=${encodeURIComponent(name)}`, {
@@ -419,7 +444,9 @@ async function publishGithub(tag, file, ctx) {
   const size = Math.round(fs.statSync(file).size / 1024);
   const rel = ctx.ghByTag.get(tag);
 
-  if (rel && !FORCE) {
+  if (rel && REPLACE && !DRY) await ghDropSameName(rel, file);
+
+  if (rel && !FORCE && !REPLACE) {
     if (ghHasAsset(rel, file)) {
       console.log(`- ${tag}  GitHub 已存在（附件 ${size} KB）`);
       return 'skipped';
@@ -436,7 +463,7 @@ async function publishGithub(tag, file, ctx) {
   }
 
   let release = rel;
-  if (rel && FORCE) {
+  if (rel) {
     release = await ghFetch(`${GH_API}/releases/${rel.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

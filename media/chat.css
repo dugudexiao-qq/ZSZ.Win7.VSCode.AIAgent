@@ -173,7 +173,9 @@ button.iconbtn { padding: 2px 6px; font-size: 11px; color: var(--vscode-foregrou
 button.iconbtn.write-on { color: var(--vscode-button-foreground, #fff); background: var(--vscode-button-background, #0e639c); border-color: var(--vscode-button-background, #0e639c); }
 button.author { padding: 1px 4px; font-size: 11px; font-weight: 400; color: var(--vscode-descriptionForeground, var(--vscode-foreground)); background: transparent; border: none; opacity: 0.85; white-space: nowrap; }
 button.author:hover { background: transparent; text-decoration: underline; opacity: 1; }
-#stop, #clear, #keybtn, #importbtn, #exportbtn { color: var(--vscode-foreground); background: transparent; border: 1px solid var(--vscode-panel-border, transparent); }
+/* 发送行里的按钮统一成「透明底 + 细边框」：Send 以前是实心主按钮，和旁边的
+ * Stop / Import / Save / 切换对话 不是一种长相，一行里两种外框很跳。 */
+#send, #stop, #schedbtn, #clear, #keybtn, #importbtn, #exportbtn { color: var(--vscode-foreground); background: transparent; border: 1px solid var(--vscode-panel-border, transparent); }
 
 #messages {
   flex: 1;

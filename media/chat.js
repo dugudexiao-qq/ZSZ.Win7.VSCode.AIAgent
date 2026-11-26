@@ -189,7 +189,7 @@
     messagesEl.appendChild(el);
   }
 
-  /* badge：气泡左上角的小角标（目前用于「⏰ 02:00 定时」）。文本放进子节点
+  /* badge：气泡左上角的小角标（目前用于「定时 02:00」）。文本放进子节点
    * 而不是直接 el.textContent，否则设置 textContent 会把角标一起清掉。 */
   function addMessage(role, text, badge) {
     if (role === 'user') { addTurnDivider(); }
@@ -213,6 +213,11 @@
     scrollDown();
     return el;
   }
+
+  /* 定时任务的角标只写文字。以前前面挂一个闹钟 emoji（U+23F0）：Win7 的
+   * Segoe UI Symbol 里它是黑白轮廓，字体被精简过的机器上还会变成豆腐块。
+   * 「定时」两个字本身就说明了一切，不必赌字体。 */
+  function scheduleBadge(ts) { return '定时 ' + clockLabel(ts); }
 
   /* 定时任务的时间戳在历史里是毫秒数，显示成 02:00 就够。 */
   function clockLabel(ts) {
@@ -1379,7 +1384,7 @@
         break;
       case 'userMessage':
         /* 定时任务由宿主发起，webview 没有走过 dispatch()，用户气泡得补上。 */
-        addMessage('user', msg.text || '', msg.scheduledAt ? '⏰ ' + clockLabel(msg.scheduledAt) + ' 定时' : '');
+        addMessage('user', msg.text || '', msg.scheduledAt ? scheduleBadge(msg.scheduledAt) : '');
         hadError = false;
         lastErrorKind = '';
         lastCheck = null;
@@ -1400,7 +1405,7 @@
         renderAttachments();
         (msg.items || []).forEach(function (it) {
           addMessage(it.role === 'assistant' ? 'assistant' : 'user', it.content || '',
-            it.scheduled ? '⏰ ' + clockLabel(it.scheduled) + ' 定时' : '');
+            it.scheduled ? scheduleBadge(it.scheduled) : '');
         });
         scrollDown();
         break;
