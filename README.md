@@ -51,7 +51,7 @@
 2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.12.3.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
-> 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
+> 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)：[发行版页](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases) 与 GitHub 逐版对应（每个版本都带 `.vsix` 附件），也可以在文件页的 `dist/` 里下最新一版。
 
 **方式二：从源码打包**
 

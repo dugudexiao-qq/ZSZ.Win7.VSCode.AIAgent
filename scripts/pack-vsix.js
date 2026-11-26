@@ -202,6 +202,8 @@ function main() {
   console.log('  size : ' + (buf.length / 1024).toFixed(2) + ' KB');
   files.forEach(function (f) { console.log('    ' + f.name + '  ' + f.data.length); });
   remindDist(outName);
+  /* 打包不等于发布：忘了刷发行版，源码是最新的、发行版页还停在旧版本。 */
+  console.log('  next: node scripts/publish-release.js   (GitCode 发行版 + vsix 附件)');
   return outFile;
 }
 

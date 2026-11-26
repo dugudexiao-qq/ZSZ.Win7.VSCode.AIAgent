@@ -427,6 +427,7 @@
     "selftest": "node scripts/selftest.js",
     "smoke": "node scripts/smoke-host.js",
     "audit": "node scripts/audit.js",
-    "pack": "node scripts/pack-vsix.js"
+    "pack": "node scripts/pack-vsix.js",
+    "release": "node scripts/publish-release.js"
   }
 }
