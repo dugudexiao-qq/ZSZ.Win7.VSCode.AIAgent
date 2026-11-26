@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.11.16-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.11.17-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -16,7 +16,7 @@
 - 侧边栏聊天，Markdown 渲染；思考过程与工具调用按发生顺序穿插显示，默认折叠一行
 - 工具集：读/写/建文件、插入编辑器、列目录、导入导出、本机命令、子任务委派
 - 子任务模式：复杂任务拆给独立子代理逐项执行（最多 6 个/轮、2 层嵌套，默认关闭）
-- @ 引用工作区文件，拖拽/粘贴自动转为引用
+- @ 引用工作区文件：清单由扩展自己遍历（首次打开也完整，不受 `files.exclude` 影响），拖拽/粘贴自动转为引用
 
 **记忆与上下文**
 
@@ -46,9 +46,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.16** 的附件 `zsz-win7-vscode-aiagent-1.11.16.vsix`（约 190 KB）
-   （直链：[Releases/download/v1.11.16](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.16/zsz-win7-vscode-aiagent-1.11.16.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.16.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.17** 的附件 `zsz-win7-vscode-aiagent-1.11.17.vsix`（约 190 KB）
+   （直链：[Releases/download/v1.11.17](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.17/zsz-win7-vscode-aiagent-1.11.17.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.17.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
@@ -109,6 +109,7 @@
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.11.17**：修「@ 引用只列出一部分文件」。清单以前来自 VS Code 的 `findFiles`：上限只有 300 个、会被 `files.exclude`/`search.exclude` 过滤，而且刚打开窗口、搜索索引还没就绪时首次查询会返回空或残缺——这正是「首次载入打 @ 很多文件找不到」的原因。现在扩展自己按广度优先遍历工作区（`workspace.fs`），只跳过 `node_modules`/`.git` 这类目录，上限 4000 个文件、深度 12、6 秒超时；面板一出现就在后台预热索引，第一次打 @ 不用等；清单为空或读取失败会在弹层里说明原因，并提供「重新读取工作区文件」。拖拽文件按名匹配也改用同一份清单，命中率一并提高。
 - **v1.11.16**：修「长期要求」输入不进去。以前要先在列表里拉到「记住一条新要求」再回车，弹出第二层输入框；直接在列表里打字回车，要么没反应，要么把过滤命中的第一条旧要求删了。现在这个列表本身就是输入框：打字时第一行变成「记住：<你打的字>」，回车即新增；重复内容提示「已经记过」，不会重复添加。删除旧要求改为二次确认，避免空回车误删。同时去掉 `ignoreFocusOut`（老版本上会让输入框留着却收不到键盘），命令面板里也能直接搜到「长期要求」。
 - **v1.11.15**：撤掉 v1.11.12 加进详情页的 4 张自绘示意图——排版和字形在 VS Code 的 Markdown 渲染里都不好看，反而干扰阅读。README 回到纯文字条目，自测加了反向用例（README 不许再嵌 `media/docs` 图片、该目录不许留残图），避免以后又混进来。
 - **v1.11.14**：新增「检查设置（旧版本/同名插件残留）」命令。会去看 `settings.json` 里三类东西：已废弃、当前版本不认识的键、值还等于旧版内置默认值的项；另外扫描扩展目录里同一 ID 的其它版本目录（VS Code 只启用一个，但旧版的默认值会被合并进设置界面）。启动时只在发现新情况时提醒一次，清理必须你点一下才执行，绝不擅自改配置。

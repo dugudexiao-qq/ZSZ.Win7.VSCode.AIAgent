@@ -31,10 +31,20 @@ const md = require('../media/markdown');
 const manifest = require('../package.json');
 
 let passed = 0;
+const pending = [];
 function check(name, fn) {
   fn();
   passed += 1;
   console.log('  PASS  ' + name);
+}
+/* Async checks are queued and awaited at the end, so a promise-based module
+ * (the @ mention file walk) can be tested without turning the whole file into
+ * a promise chain. */
+function checkAsync(name, fn) {
+  pending.push(fn().then(function () {
+    passed += 1;
+    console.log('  PASS  ' + name);
+  }));
 }
 
 function makeError(props) {
@@ -85,6 +95,7 @@ function makeZip(files) {
   return Buffer.concat(locals.concat([cd, eocd]));
 }
 
+(async function () {
 try {
   check('SSE decoder reassembles split chunks and ignores comments', function () {
     const decoder = createSseDecoder();
@@ -786,9 +797,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.11.16, no built-in endpoint/model, 22 commands, all activation events', function () {
+  check('manifest: 1.11.17, no built-in endpoint/model, 22 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.16');
+    assert.strictEqual(manifest.version, '1.11.17');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -892,6 +903,81 @@ try {
 
   /* v1.11.16: 在「长期要求」选择框里打字回车必须算数——列表是输入框也是菜单，
    * 第一行永远是「记住：<你刚打的字>」，回车不能被过滤结果吃掉。 */
+  /* v1.11.17: @ 的文件清单改成自己遍历工作区。VS Code 的 findFiles 在刚打开
+   * 窗口时可能返回空/残缺，还会被 files.exclude 吃掉；表现就是「@ 里少了一大半
+   * 文件」。这里用假树验证：跳过 node_modules/.git、广度优先、预算截断、坏目录
+   * 不崩、空结果与无工作区都不进缓存。 */
+  checkAsync('@ mention index walks the workspace itself, and never caches an empty result', async function () {
+    const fi = require('../src/fileIndex');
+    const tree = {
+      '/root': [['node_modules', 2], ['.git', 2], ['src', 2], ['a.md', 1], ['b.txt', 1]],
+      '/root/src': [['deep', 2], ['main.js', 1]],
+      '/root/src/deep': [['x.js', 1]],
+      '/root/node_modules': [['pkg', 2]],
+      '/root/node_modules/pkg': [['index.js', 1]],
+      '/root/.git': [['config', 1]]
+    };
+    const readDirectory = async function (uri) {
+      if (tree[uri] === undefined) { throw new Error('ENOENT'); }
+      return tree[uri];
+    };
+    const joinPath = function (uri, name) { return uri + '/' + name; };
+
+    const res = await fi.walkWorkspace(['/root'], readDirectory, joinPath, {});
+    assert.deepStrictEqual(res.files, ['a.md', 'b.txt', 'src/deep/x.js', 'src/main.js'],
+      'must list real files, skip node_modules/.git, sort by path');
+    assert.strictEqual(res.truncated, false);
+
+    const capped = await fi.walkWorkspace(['/root'], readDirectory, joinPath, { maxFiles: 2 });
+    assert.strictEqual(capped.files.length, 2, 'file budget must be enforced');
+    assert.strictEqual(capped.truncated, true, 'hitting the budget must be reported');
+
+    const shallow = await fi.walkWorkspace(['/root'], readDirectory, joinPath, { maxDepth: 0 });
+    assert.deepStrictEqual(shallow.files, ['a.md', 'b.txt'], 'depth limit keeps only top-level files');
+    assert.strictEqual(shallow.truncated, true);
+
+    /* 坏目录（权限/网络盘）不能把整次索引带崩 */
+    const partial = await fi.walkWorkspace(['/root'], async function (uri) {
+      if (uri === '/root/src') { throw new Error('EACCES'); }
+      return readDirectory(uri);
+    }, joinPath, {});
+    assert.ok(partial.files.indexOf('src/main.js') === -1, 'unreadable folder is skipped');
+    assert.ok(partial.files.indexOf('a.md') !== -1, 'the rest of the tree still comes back');
+
+    /* createFileIndex：缓存、force、空结果不缓存 */
+    let calls = 0;
+    const fakeVscode = {
+      workspace: {
+        workspaceFolders: [{ uri: '/root' }],
+        fs: { readDirectory: function (uri) { calls += 1; return readDirectory(uri); } }
+      },
+      Uri: { joinPath: function (uri, name) { return joinPath(uri, name); } }
+    };
+    const index = fi.createFileIndex(fakeVscode, { ttlMs: 60000 });
+    const first = await index.collect(false);
+    assert.strictEqual(first.files.length, 4);
+    const firstCalls = calls;
+    await index.collect(false);
+    assert.strictEqual(calls, firstCalls, 'a warm cache must not walk the tree again');
+    await index.collect(true);
+    assert.ok(calls > firstCalls, 'force must bypass the cache');
+
+    let emptyCalls = 0;
+    const emptyVscode = {
+      workspace: { workspaceFolders: [{ uri: '/empty' }], fs: { readDirectory: function () { emptyCalls += 1; return Promise.resolve([]); } } },
+      Uri: { joinPath: function (uri, name) { return uri + '/' + name; } }
+    };
+    const emptyIndex = fi.createFileIndex(emptyVscode);
+    await emptyIndex.collect(false);
+    await emptyIndex.collect(false);
+    assert.ok(emptyCalls >= 2, 'an empty result must be re-read next time, not cached');
+
+    const noFolder = fi.createFileIndex({ workspace: { workspaceFolders: [] }, Uri: {} });
+    const none = await noFolder.collect(false);
+    assert.strictEqual(none.reason, 'no-folder');
+    assert.strictEqual(none.at, 0, 'no-folder must not be cached');
+  });
+
   check('rules picker: typed text + Enter always means "remember this"', function () {
     const rp = require('../src/rulePicker');
     const memory = ['注释用中文'];
@@ -999,8 +1085,11 @@ try {
     }
   });
 
+  await Promise.all(pending);
+
   console.log('\nAll ' + passed + ' self-tests passed.');
 } catch (err) {
   console.error('\nSELF-TEST FAILED: ' + (err && err.stack ? err.stack : err));
   process.exitCode = 1;
 }
+})();

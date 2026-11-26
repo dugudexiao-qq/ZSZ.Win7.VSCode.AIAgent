@@ -936,6 +936,8 @@
   var mentionEl = null;
   var mentionReady = false;   // 宿主是否回过文件清单
   var mentionError = '';      // 宿主读取失败时的原因
+  var mentionTruncated = false; // 文件太多，只索引了一部分
+  var mentionTotal = 0;       // 索引到的文件数（用于提示）
   var mentionAskedAt = 0;     // 上次请求时间，避免每次按键都重发
 
   function ensureMentionEl() {
@@ -985,7 +987,17 @@
     if (!mentionReady) { return '正在读取工作区文件…'; }
     if (mentionError) { return '文件清单读取失败：' + mentionError; }
     if (!mentionFiles.length) { return '工作区里没有可引用的文件（先打开一个文件夹）'; }
-    return '没有匹配的文件';
+    if (mentionTruncated) {
+      return '没有匹配的文件（已索引前 ' + mentionTotal + ' 个，可用更具体的片段再试）';
+    }
+    return '没有匹配的文件（共 ' + mentionTotal + ' 个可引用文件）';
+  }
+
+  /* 清单是宿主自己遍历出来的，卡住/为空时给一个显式重试入口——
+   * force 会跳过宿主那 60 秒缓存。 */
+  function requestMentionFiles(force) {
+    mentionAskedAt = Date.now();
+    vscode.postMessage({ type: 'mentionQuery', force: !!force });
   }
 
   function renderMention() {
@@ -1008,6 +1020,18 @@
       hint.className = 'mention-empty';
       hint.textContent = mentionHintText();
       mentionEl.appendChild(hint);
+      var retry = document.createElement('div');
+      retry.className = 'mention-retry';
+      retry.textContent = mentionReady ? '重新读取工作区文件' : '取消';
+      retry.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        if (!mentionReady) { closeMention(); return; }
+        mentionReady = false;
+        mentionError = '';
+        requestMentionFiles(true);
+        renderMention();
+      });
+      mentionEl.appendChild(retry);
       return;
     }
     mentionItems.forEach(function (p, idx) {
@@ -1017,6 +1041,12 @@
       it.addEventListener('mousedown', function (e) { e.preventDefault(); applyMention(idx); });
       mentionEl.appendChild(it);
     });
+    if (mentionTruncated) {
+      var foot = document.createElement('div');
+      foot.className = 'mention-empty';
+      foot.textContent = '已索引前 ' + mentionTotal + ' 个文件（跳过 node_modules/.git）';
+      mentionEl.appendChild(foot);
+    }
   }
 
   function applyMention(idx) {
@@ -1042,11 +1072,13 @@
     ensureMentionEl();
     // 文件清单按需请求：第一次、上次失败（5 秒后重试）、或超过 60 秒
     // （期间可能新建了文件）
-    var stale = mentionError ? (Date.now() - mentionAskedAt > 5000) : (Date.now() - mentionAskedAt > 60000);
-    if (!mentionReady || stale) {
-      mentionAskedAt = Date.now();
-      vscode.postMessage({ type: 'mentionQuery' });
-    }
+    var quickRetry = !!mentionError || !mentionFiles.length;
+    /* 已就绪：清单为空/失败 5 秒后可再问，否则 60 秒（期间可能新建了文件）。
+     * 未就绪：1.5 秒内不重复发，避免连续按键把宿主问爆。 */
+    var due = mentionReady
+      ? (Date.now() - mentionAskedAt > (quickRetry ? 5000 : 60000))
+      : (Date.now() - mentionAskedAt > 1500);
+    if (due) { requestMentionFiles(false); }
     renderMention();
   }
 
@@ -1433,6 +1465,8 @@
       case 'mentionFiles':
         mentionReady = true;
         mentionError = msg.error ? String(msg.error) : '';
+        mentionTruncated = !!msg.truncated;
+        mentionTotal = msg.total || (msg.files ? msg.files.length : 0);
         if (msg.files) { mentionFiles = msg.files; }
         // 关键：清单回来时弹层可能正处于「正在读取…」的隐藏/占位状态，
         // 只要用户光标还在 @ 词里就重绘一次，否则首个 @ 永远看不到列表。

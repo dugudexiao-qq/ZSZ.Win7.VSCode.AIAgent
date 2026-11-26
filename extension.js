@@ -140,6 +140,13 @@ function activate(context) {
   provider = new ChatViewProvider(context.extensionUri);
   function refresh() { return provider.postState(); }
 
+  /* 换文件夹 / 多根工作区增删后，@ 的文件清单必须重算。 */
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(function () {
+      provider.invalidateFileIndex();
+    })
+  );
+
   /* 设置体检：同一个扩展 ID 装过多个版本、或曾经装过同名增强版时，旧版的键会
    * 一直躺在 settings.json 里；更隐蔽的是旧版内置默认值被写进用户设置，长期压住
    * 新版默认值。启动时查一次，只在发现新情况时提醒一次（按版本记，不反复打扰）。 */

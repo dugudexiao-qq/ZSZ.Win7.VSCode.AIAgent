@@ -184,6 +184,7 @@ const vscodeStub = {
       };
     },
     asRelativePath: function (uri) { return uri.fsPath || 'app.js'; },
+    onDidChangeWorkspaceFolders: function () { return disposable(); },
     findFiles: async function () { return [{ fsPath: 'C:/proj/app.js' }]; },
     // Backed by the real disk when the path exists, so readFile's size gate and
     // binary detection can be tested for real; falls back to the fake project
@@ -194,6 +195,17 @@ const vscodeStub = {
       },
       readFile: async function (uri) {
         try { return fs.readFileSync(uri.fsPath); } catch (e) { return Buffer.from('const answer = 42;'); }
+      },
+      /* 假文件树：@ 索引自己遍历这个，不依赖 findFiles 的搜索索引。 */
+      readDirectory: async function (uri) {
+        const key = String(uri.fsPath).replace(/\\/g, '/').toLowerCase();
+        const tree = {
+          'c:/proj': [['src', 2], ['README.md', 1], ['node_modules', 2]],
+          'c:/proj/src': [['index.js', 1], ['util.js', 1]],
+          'c:/proj/node_modules': [['pkg', 2]]
+        };
+        if (!tree[key]) { throw new Error('ENOENT ' + key); }
+        return tree[key];
       }
     }
   },
@@ -387,7 +399,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.16');
+  assert.strictEqual(info.version, '1.11.17');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -615,7 +627,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.16');
+  assert.strictEqual(state.version, '1.11.17');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1405,9 +1417,26 @@ async function main() {
     'host reply must repaint even while the popup is hidden');
   assert.ok(/compositionend/.test(mentionJs), 'IME composition must re-check the @ query');
   const cvSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
-  assert.ok(/findFiles\('\*\*\/\*', null, 300\)/.test(cvSrc), 'host must retry without excludes when empty');
+  assert.ok(/_mentionIndex\.collect\(/.test(cvSrc), 'host must serve the mention list from its own index');
+  assert.ok(!/workspace\.findFiles\(/.test(cvSrc), 'the mention list must not depend on the search index any more');
   assert.ok(/error: String\(err/.test(cvSrc), 'host must pass the failure reason to the webview');
-  console.log('  PASS  @ mention: full-width/CJK trigger, visible hints, host fallback wired');
+  assert.ok(/mention-retry/.test(mentionJs) && /mention-retry/.test(mentionCss),
+    'an empty/loading list must offer a retry affordance');
+  assert.ok(/mentionQuery', force: !!force/.test(mentionJs) && /!!msg\.force/.test(cvSrc),
+    'the retry must be able to bypass the 60s cache');
+
+  /* 端到端：刚打开的面板第一次 @ 就要拿到完整清单（含被 files.exclude 藏起来的
+   * 文件），并且 node_modules 不出现。 */
+  const beforeMention = events.length;
+  await viewMessageHandler({ type: 'mentionQuery' });
+  const mentionReply = events.slice(beforeMention).filter(function (e) { return e.type === 'mentionFiles'; }).pop();
+  assert.ok(mentionReply, 'host must answer a mentionQuery');
+  assert.strictEqual(mentionReply.error, undefined, 'the fresh index must not fail: ' + mentionReply.error);
+  assert.deepStrictEqual(mentionReply.files.slice().sort(), ['README.md', 'src/index.js', 'src/util.js'],
+    'got: ' + JSON.stringify(mentionReply),
+    'the first @ must see every real file and skip node_modules');
+  assert.strictEqual(mentionReply.truncated, false);
+  console.log('  PASS  @ mention: full-width/CJK trigger, complete first-load index, retry wired');
 
   /* Fabricated tool transcripts: prompt forbids them, and a zero-tool run that
    * still shows "TOOL RESULT"-style text raises a notice. */

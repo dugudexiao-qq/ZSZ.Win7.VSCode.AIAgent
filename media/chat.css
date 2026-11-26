@@ -980,3 +980,10 @@ textarea.qedit { margin-bottom: 3px; font-size: 11px; }
   outline-offset: -1px;
 }
 .mention-item::before { content: "@ "; color: var(--vscode-descriptionForeground, inherit); opacity: .8; }
+.mention-retry {
+  padding: 3px 8px 5px;
+  font-size: 11px;
+  color: var(--vscode-textLink-foreground, #3794ff);
+  cursor: pointer;
+}
+.mention-retry:hover { text-decoration: underline; }

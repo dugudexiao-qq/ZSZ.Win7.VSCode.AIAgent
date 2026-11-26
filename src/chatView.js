@@ -7,6 +7,7 @@ const runtime = require('./runtime');
 const { runAgent } = require('./agent');
 const compact = require('./compact');
 const snapLib = require('./snapshots');
+const fileIndex = require('./fileIndex');
 
 const EXT_ID = manifest.publisher + '.' + manifest.name;
 
@@ -49,6 +50,10 @@ class ChatViewProvider {
     this._cts = null;
     this._busy = false;
     this._lastAnswer = '';
+    /* @ 引用的文件清单：自己遍历工作区（不依赖搜索索引），带 60s 缓存。
+     * 刚打开窗口时 VS Code 的 search provider 往往还没就绪，findFiles 会
+     * 返回空/残缺，用户看到的就是「@ 里少了一大半文件」。 */
+    this._mentionIndex = fileIndex.createFileIndex(vscode);
   }
 
   /* ---- conversation sessions ---- */
@@ -212,6 +217,15 @@ class ChatViewProvider {
     this._pending = [];
     queued.forEach((msg) => { this._post(msg, false); });
     this.postState();
+
+    /* 面板一出现就在后台把文件索引跑起来，用户第一次打 @ 时不用等遍历。
+     * 失败无所谓：真打 @ 时会重来一次并把原因显示出来。 */
+    this._mentionIndex.collect().catch(function () {});
+  }
+
+  /* 换工作区/加文件夹后清单要重算，否则新目录里的文件一直 @ 不到。 */
+  invalidateFileIndex() {
+    this._mentionIndex.invalidate();
   }
 
   resolveWebviewView(webviewView) {
@@ -505,8 +519,7 @@ class ChatViewProvider {
         this._postAttachments(entry);
         break;
       case 'mentionQuery':
-        this._sendMentionFiles(entry);
-        break;
+        return this._sendMentionFiles(entry, !!msg.force);
       case 'dropFiles':
         return this._resolveDrops(Array.isArray(msg.files) ? msg.files : [], entry);
       case 'removeAttachment':
@@ -581,20 +594,21 @@ class ChatViewProvider {
   }
 
   /* @ 引用：用户在输入框打出 @ 时，webview 请求一份工作区文件清单做模糊
-   * 匹配。清单按相对路径返回，供输入框内直接选用。
-   * 空结果时放宽一次（去掉排除规则），仍为空就把原因带回 webview 显示，
-   * 避免「打了 @ 毫无反应」这种无从判断的静默失败。 */
-  async _sendMentionFiles(entry) {
+   * 匹配。清单由 fileIndex 自己遍历工作区得到（不依赖搜索索引，也不吃
+   * files.exclude），首次打开窗口就是完整的一份；force=true 时跳过缓存。
+   * 空结果会把原因带回 webview 显示，避免「打了 @ 毫无反应」的静默失败。 */
+  async _sendMentionFiles(entry, force) {
     try {
-      let uris = await vscode.workspace.findFiles('**/*', '**/{node_modules,.git,.agent-selftest}/**', 300);
-      if (!uris.length) {
-        uris = await vscode.workspace.findFiles('**/*', null, 300);
-      }
-      const files = uris.map(function (u) { return vscode.workspace.asRelativePath(u, false); })
-        .filter(function (p) { return !!p; });
-      files.sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : (a.toLowerCase() > b.toLowerCase() ? 1 : 0); });
-      this._postTo(entry, { type: 'mentionFiles', files: files });
+      const index = await this._mentionIndex.collect(force);
+      this._postTo(entry, {
+        type: 'mentionFiles',
+        files: index.files,
+        total: index.files.length,
+        truncated: !!index.truncated,
+        reason: index.reason || ''
+      });
     } catch (err) {
+      this._mentionIndex.invalidate();
       this._postTo(entry, {
         type: 'mentionFiles',
         files: [],
@@ -629,17 +643,13 @@ class ChatViewProvider {
     }
     const name = String((f && f.name) || '').trim();
     if (!name) { return ''; }
-    let uris = await vscode.workspace.findFiles('**/*', '**/{node_modules,.git,.agent-selftest}/**', 300);
-    if (!uris.length) {
-      uris = await vscode.workspace.findFiles('**/*', null, 300);
-    }
+    /* 同一份索引，不再单独跑一遍 findFiles：清单更全，也不用重复遍历。 */
+    const index = await this._mentionIndex.collect();
     const lower = name.toLowerCase();
-    let hit = null;
-    for (const u of uris) {
-      const rel = vscode.workspace.asRelativePath(u, false).replace(/\\/g, '/');
+    const hit = index.files.find(function (rel) {
       const rl = rel.toLowerCase();
-      if (rl === lower || rl.endsWith('/' + lower)) { hit = rel; break; }
-    }
+      return rl === lower || rl.endsWith('/' + lower);
+    });
     return hit || name;
   }
 
