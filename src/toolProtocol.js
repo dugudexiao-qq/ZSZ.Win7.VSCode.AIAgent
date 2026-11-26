@@ -149,8 +149,14 @@ function normalizeSpecialTokens(s) {
 // 模板退化兜底：长会话收尾时小模型会把竖线写成带空格的多段
 // （< | | | | DSML | | | |）或全半角混排。先把 < 与 DSML 之间、DSML 之后的
 // 竖线/空格序列统一归一成 <||DSML||，闭合同理，后续正则只认标准形态。
+//
+// DeepSeek V3.2 起把分隔符写成了「全角竖线 + ｟ ｠ + 全角竖线」：
+//   <｜｟DSML｠｜ invoke name="readFile">
+// ｟（U+FF5F）/｠（U+FF60）只在这种标记里出现，先折成竖线，剩下的交给下面
+// 的老形态归一。漏掉这一步，整段调用会被当成普通回答原样显示给用户。
 function normalizeDsmlBars(s) {
   return String(s || '')
+    .replace(/[｟｠]/g, '|')
     .replace(/<[｜|\s]{2,}DSML[｜|\s]{2,}/gi, '<||DSML||')
     .replace(/<\/[｜|\s]{2,}DSML[｜|\s]{2,}/gi, '</||DSML||');
 }
@@ -345,6 +351,9 @@ function hasBrokenToolTemplate(content) {
   // DeepSeek 特殊 token 泄漏（完整或残缺，全角 ｜ + 拉丁字母，如 <｜tool /
   // <｜User）：解析不出调用时一律视为坏模板，交给重试，不把原文漏给用户。
   if (/<[｜][A-Za-z]/.test(s)) { return true; }
+  // V3.2 的 ｟｠ 分隔符泄漏：即使没有 invoke 名字（只剩 calls / parameter），
+  // 也算坏模板，交给重试去要一次标准格式。
+  if (/[｟｠]/.test(s)) { return true; }
   const n = normalizeDsmlBars(s);
   if (/<\/?\|\|DSML\|\|/i.test(n)) { return true; }
   // 只认无歧义的调用标签（invoke / tool_call / calls）。裸 <parameter> 与

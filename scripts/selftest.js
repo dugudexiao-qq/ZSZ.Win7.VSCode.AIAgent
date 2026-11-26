@@ -190,6 +190,15 @@ try {
       parseToolCall('<invoke name="listFiles"><parameter name="args" string="false">{}</parameter></invoke>').tool,
       'listFiles'
     );
+    /* DeepSeek V3.2 的新分隔符：全角竖线 + ｟ ｠（U+FF5F/FF60）。用户实际
+     * 见到的就是这一坨被原样当成回答打印出来——必须解析成可执行的调用。 */
+    const v32 = '<｜｟DSML｠｜ calls>\n<｜｟DSML｠｜ invoke name="readFile">\n' +
+      '<｜｟DSML｠｜ parameter name="args" string="false">{"path": "target.js"}</｜｟DSML｠｜ parameter>\n' +
+      '</｟DSML｠｜ invoke>\n</｟DSML｠｜ calls>';
+    assert.deepStrictEqual(parseToolCall(v32), { tool: 'readFile', args: { path: 'target.js' } });
+    assert.strictEqual(hasBrokenToolTemplate(v32), false, 'a well-formed ｟｠ call is not a broken template');
+    /* 只有外层 calls、没有 invoke 名字：解析不出，但必须交给重试，不能当回答。 */
+    assert.strictEqual(hasBrokenToolTemplate('<｜｟DSML｠｜ calls>\n</｜｟DSML｠｜ calls>'), true);
     // 模板退化兜底（v1.7.2）：竖线带空格、invoke 无闭合也要能识别出工具名
     assert.strictEqual(
       parseToolCall('< | | | | DSML | | | |\n<｜｜DSML｜｜ invoke name="runCommand">\n< | | DSML | |').tool,
@@ -798,9 +807,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.12.5, no built-in endpoint/model, 25 commands, all activation events', function () {
+  check('manifest: 1.12.6, no built-in endpoint/model, 25 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.12.5');
+    assert.strictEqual(manifest.version, '1.12.6');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');

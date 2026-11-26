@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.12.5-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.12.6-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -46,9 +46,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.12.5** 的附件 `zsz-win7-vscode-aiagent-1.12.5.vsix`（约 200 KB）
-   （直链：[Releases/download/v1.12.5](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.12.5/zsz-win7-vscode-aiagent-1.12.5.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.12.5.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.12.6** 的附件 `zsz-win7-vscode-aiagent-1.12.6.vsix`（约 200 KB）
+   （直链：[Releases/download/v1.12.6](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.12.6/zsz-win7-vscode-aiagent-1.12.6.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.12.6.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)：[发行版页](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases) 与 GitHub 逐版对应（每个版本都带 `.vsix` 附件），也可以在文件页的 `dist/` 里下最新一版。
@@ -160,6 +160,7 @@ feed 的内容很宽松，认这三种形态之一即可：
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.12.6**：修「模型把工具调用当成正文打印出来」。DeepSeek V3.2 把调用分隔符换成了 `｜｟DSML｠｜`（全角竖线 + U+FF5F/FF60），旧解析只认 `｜｜DSML｜｜`，整段 `<invoke name="readFile">…` 认不出来，就被当成最终回答显示给用户，任务还标了「已完成」。现在先把 `｟｠` 折成竖线再按老形态归一，正常调用直接执行；只剩外层标签、拿不到工具名的畸形输出也会被判为坏模板并要求模型重发，不再漏进聊天区。
 - **v1.12.5**：三处交互修正。① **「定时」从菜单搬到发送按钮旁**，输入框上方写好任务、点一下就能排时间，不用先翻「···」菜单；② **发送按钮不再改名**：正在回复时它原来会变成「排队」，看着像另一个功能，现在始终是 `Send`，悬停才提示「点击会排到这一轮结束之后发送」；③ **修「关掉 VS Code 再打开，刚才的对话不见了」**：面板刚挂载时那份历史重放常常赶在页面脚本注册监听之前，就此丢掉，之后没有任何补发——现在 webview 报 `ready` 后会再定向重放一次（正在跑的那一轮除外，免得清掉流式输出）。
 - **v1.12.4**：修「模型换了，界面还写着旧名字」。徽章上的模型名以前只在面板打开和每轮结束时推一次：用户在设置里把 `llama.cpp` 换成别的模型，请求其实已经走新配置，界面却一直挂着旧名字——现在任何 `win7Agent` 设置变更都会立刻重推状态。另外，如果用户设置和工作区 `settings.json` 里都写了 `model`，生效的只有优先级高的那份，徽章显示的就是它；悬停会补一句「当前生效：工作区设置；用户设置「llama.cpp」未生效」，不用再靠猜。
 - **v1.12.3**：新增**版本更新提醒**。启动后一天查一次新版本，有更新时弹「查看更新 / 跳过此版本」，跳过的版本不再打扰；命令面板「检查更新」可随时手动查。**更新源可自定义**：`win7Agent.updateRepo` 支持 `owner/repo`（GitHub Releases）、GitHub 仓库主页链接，或任何返回 JSON 的 https 地址（内网镜像自建 feed）；断网/内网不通只写日志，手动查才报错。顺带把白名单说明改成「按命令分段匹配」，`maxToolRounds=0` 真正禁用工具。
