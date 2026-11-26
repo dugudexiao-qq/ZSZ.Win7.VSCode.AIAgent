@@ -685,16 +685,21 @@ class ChatViewProvider {
     const apiKey = await runtime.getApiKey();
     if (!apiKey && !config.localEndpoint) {
       this._post({ type: 'error', text: 'This endpoint needs an API key. Click "Set key" first.' }, false);
+      /* 也要给一个 done：否则面板会一直以为有任务在飞，排队的下一条永远不发。 */
+      this._post({ type: 'done' }, false);
       return;
     }
 
     /* 定时任务没有 webview 发消息：这一轮的「用户气泡」得由宿主补上，
      * 否则面板里只会看到回答，前提条件凭空消失。 */
     const scheduledAt = meta && meta.scheduled ? Number(meta.scheduled) || Date.now() : 0;
+    /* 定时任务多半在夜里无人值守：确认弹窗没人点就等于白等，改为按推荐自动
+     * 执行（见 agent.js 的 unattended）。可以用 scheduledUnattended 关掉。 */
+    const unattended = Boolean(scheduledAt) && config.scheduledUnattended !== false;
     if (scheduledAt) {
       this._post({ type: 'userMessage', text: text, scheduledAt: scheduledAt }, false);
       this._post({ type: 'notice', text: '[定时] ' + schedulerLib.fmtClock(scheduledAt) +
-        ' 的定时任务开始执行' }, false);
+        ' 的定时任务开始执行' + (unattended ? '（无人值守：需要确认的写入/命令按推荐自动执行）' : '') }, false);
     }
 
     this._busy = true;
@@ -734,6 +739,7 @@ class ChatViewProvider {
         apiKey: apiKey || '',
         history: this._history,
         token: this._cts.token,
+        unattended: unattended,
         rules: { memoryRules: runtime.getMemoryRules(), lessons: runtime.getLessons() },
         autoLearn: config.autoLearn,
         /* 跨轮复用同一份失败追踪表，让「上一轮报错、这一轮才修好」也能

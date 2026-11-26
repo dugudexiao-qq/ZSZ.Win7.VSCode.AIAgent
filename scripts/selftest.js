@@ -798,9 +798,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.12.0, no built-in endpoint/model, 24 commands, all activation events', function () {
+  check('manifest: 1.12.1, no built-in endpoint/model, 24 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.12.0');
+    assert.strictEqual(manifest.version, '1.12.1');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -825,6 +825,9 @@ try {
     assert.ok(!props['win7Agent.allowWrite'], 'the redundant legacy write switch must be gone');
     assert.strictEqual(props['win7Agent.confirmTimeoutMs'].default, 120000, 'confirm dialogs must time out by default');
     assert.strictEqual(props['win7Agent.confirmTimeoutMs'].minimum, 10000);
+    /* v1.12.1：定时任务夜里无人值守，确认弹窗改按推荐自动执行（可关）。 */
+    assert.strictEqual(props['win7Agent.scheduledUnattended'].default, true,
+      'scheduled runs must auto-approve their confirmations by default');
     assert.strictEqual(props['win7Agent.taskCheck'].default, true, 'completion check must exist and default ON');
     assert.strictEqual(props['win7Agent.maxContextChars'].default, 8000, 'context budget must exist');
     assert.strictEqual(props['win7Agent.maxContextChars'].minimum, 2000);

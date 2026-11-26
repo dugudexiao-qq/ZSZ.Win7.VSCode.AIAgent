@@ -588,6 +588,51 @@ checkAsync('after repeated timeouts the queue pauses, so a dead server is not ha
     'the phase line must explain the pause: ' + els.phaseText.textContent);
 });
 
+checkAsync('a successful turn clears a pause left behind by an earlier failure (v1.12.1)', async function () {
+  /* 老问题：某次报错（401 / Stop / 确认超时）把队列标成「已暂停」，之后每一轮
+   * 都成功了，暂停标记却一直粘着——排队的第二条永远停在「待发送」，看起来
+   * 就是「成功了也不往下跑」。成功即放行。 */
+  hostMessage({ type: 'cleared' });
+  posted.length = 0;
+  let sends = await round('other', 'Authentication failed (HTTP 401).', '被暂停的那条');
+  assert.strictEqual(sends.length, 0, 'precondition: the failure pauses the queue');
+  assert.strictEqual(queuePaused(), true, 'precondition: the queue is paused');
+
+  /* 用户手动发一条（这一步成功），队列里还留着上一条。 */
+  input.value = '手动补发的一条';
+  fire(els.send, 'click');
+  assert.ok(sendsAfter(0).some(function (m) { return m.text === '手动补发的一条'; }),
+    'a manual send while paused must still go out');
+  const mark = posted.length;
+  hostMessage({ type: 'busy', value: true, startedAt: Date.now() });
+  hostMessage({ type: 'start' });
+  hostMessage({ type: 'delta', text: '好了' });
+  hostMessage({ type: 'done' });
+  await tick(120);
+  sends = sendsAfter(mark);
+  assert.strictEqual(queuePaused(), false, 'a successful turn must drop the stale pause');
+  assert.strictEqual(sends.length, 1, 'the queued message must follow the success');
+  assert.strictEqual(sends[0].text, '被暂停的那条');
+});
+
+checkAsync('a successful turn starts the next queued message right away (v1.12.1)', async function () {
+  hostMessage({ type: 'cleared' });
+  posted.length = 0;
+  hostMessage({ type: 'busy', value: true, startedAt: Date.now() });
+  hostMessage({ type: 'start' });
+  hostMessage({ type: 'delta', text: '第一件事做完了' });
+  input.value = '接着做第二件事';
+  fire(els.send, 'click');
+  assert.strictEqual(els.queue.hidden, false, 'precondition: the message must be queued');
+  const mark = posted.length;
+  hostMessage({ type: 'done' });
+  await tick(120);
+  const sends = sendsAfter(mark);
+  assert.strictEqual(sends.length, 1, 'success must not strand the queue');
+  assert.strictEqual(sends[0].text, '接着做第二件事');
+  assert.strictEqual(queuePaused(), false);
+});
+
 checkAsync('one successful turn resets the streak, so a later timeout still continues', async function () {
   hostMessage({ type: 'cleared' });
   hostMessage({ type: 'busy', value: true, startedAt: Date.now() });

@@ -412,7 +412,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.12.0');
+  assert.strictEqual(info.version, '1.12.1');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -640,7 +640,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.12.0');
+  assert.strictEqual(state.version, '1.12.1');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1386,6 +1386,63 @@ async function main() {
   assert.ok(events.some(function (e) { return e.type === 'userMessage' && /到点自动跑的这一条/.test(e.text || ''); }),
     'the timer must actually start a turn: ' + JSON.stringify(events.map(function (e) { return e.type; })));
   assert.ok(events.some(function (e) { return e.type === 'done'; }), 'the fired run must finish');
+
+  /* v1.12.1：定时任务多在夜里跑，确认弹窗没人点就等于白跑一趟（等满 120 秒
+   * 被当成拒绝）。到点的那一轮必须按推荐自动确认写入——这里把弹窗桩设成
+   * 「永远不返回」，只要代码还去等它，这一轮就会卡住，测试立刻暴露。 */
+  const schedRoot = fsmod.mkdtempSync(path.join(os.tmpdir(), 'zsz-sched-'));
+  const savedFoldersForSched = vscodeStub.workspace.workspaceFolders;
+  vscodeStub.workspace.workspaceFolders = [{ uri: { fsPath: schedRoot } }];
+  await runtime.setWriteMode(true);
+  await runtime.setWriteConfirm(true);
+  scriptedResponses.length = 0;
+  scriptedResponses.push('{"tool":"createFile","args":{"path":"night.txt","text":"夜里写好的"}}');
+  scriptedResponses.push('夜里这一趟写完了。');
+  events.length = 0;
+  neverResolveWarning = true;
+  nextConfirmAnswer = undefined;
+  const schedWrite = await Promise.race([
+    registeredProvider.runScheduled('夜里把报告写出来', { at: Date.now() }),
+    new Promise(function (r) { setTimeout(function () { r('__HUNG__'); }, 5000); })
+  ]);
+  neverResolveWarning = false;
+  assert.notStrictEqual(schedWrite, '__HUNG__', 'an unattended run must not wait on a confirmation dialog');
+  assert.ok(fsmod.existsSync(path.join(schedRoot, 'night.txt')),
+    'the scheduled write must go through without a human');
+  assert.ok(events.some(function (e) { return e.type === 'notice' && /无人值守/.test(e.text || ''); }),
+    'the transcript must record that the AI approved it on its own: ' +
+    JSON.stringify(events.filter(function (e) { return e.type === 'notice'; }).map(function (e) { return e.text; })));
+  assert.ok(!events.some(function (e) { return e.type === 'awaiting'; }),
+    'no modal may be awaited during a scheduled run');
+  assert.strictEqual(events.filter(function (e) { return e.type === 'error'; }).length, 0,
+    'an unattended write must not fail');
+
+  /* 关掉无人值守：定时任务就该像手动那一轮一样弹窗等确认，没人点就超时不动。 */
+  settings['win7Agent.scheduledUnattended'] = false;
+  settings['win7Agent.confirmTimeoutMs'] = 300;
+  scriptedResponses.length = 0;
+  scriptedResponses.push('{"tool":"createFile","args":{"path":"guarded.txt","text":"不该被写"}}');
+  scriptedResponses.push('没等到确认，先停。');
+  events.length = 0;
+  neverResolveWarning = true;
+  const guarded = await Promise.race([
+    registeredProvider.runScheduled('这条要人确认', { at: Date.now() }),
+    new Promise(function (r) { setTimeout(function () { r('__HUNG__'); }, 8000); })
+  ]);
+  neverResolveWarning = false;
+  assert.notStrictEqual(guarded, '__HUNG__');
+  assert.ok(events.some(function (e) { return e.type === 'awaiting'; }),
+    'with scheduledUnattended=false the run must still ask');
+  assert.ok(!fsmod.existsSync(path.join(schedRoot, 'guarded.txt')),
+    'the write must wait for a human when unattended mode is off');
+  delete settings['win7Agent.scheduledUnattended'];
+  delete settings['win7Agent.confirmTimeoutMs'];
+
+  await runtime.setWriteConfirm(true);
+  await runtime.setWriteMode(false);
+  vscodeStub.workspace.workspaceFolders = savedFoldersForSched;
+  fsmod.rmSync(schedRoot, { recursive: true, force: true });
+  console.log('  PASS  a scheduled turn auto-approves its confirmations (and only when unattended is on)');
 
   const cvSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
   const chatSource = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');

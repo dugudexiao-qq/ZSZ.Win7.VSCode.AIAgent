@@ -117,6 +117,30 @@ function emitAwaiting(sink, text) {
   if (emit) { emit({ type: 'awaiting', text: text }); }
 }
 
+/* 定时任务多在夜里无人值守的时候跑：「确认弹窗」没人点，等满 120 秒就被当成
+ * 拒绝，整条任务白跑一趟——这正是用户设了定时却什么也没发生的原因。
+ * 这类轮次（params.unattended）直接采用弹窗上的推荐按钮，等于「AI 自己按推荐
+ * 决定」，并在聊天区留一条记录，事后能看清它替你点了什么。 */
+function isUnattended(sink) {
+  return Boolean(sink && sink.unattended === true);
+}
+
+/* 弹窗文案统一是「等待你确认（某开关）：是否……」——自动确认时把前缀去掉，
+ * 只留下「到底做了什么」，避免日志里出现「等待你确认…已自动确认」的自相矛盾。 */
+function cleanConfirmText(text) {
+  return String(text || '').replace(/^等待你确认（[^）]*）：\s*/, '').trim();
+}
+
+function emitAutoApprove(sink, text) {
+  var emit = typeof sink === 'function' ? sink
+    : (sink && typeof sink.emit === 'function' ? sink.emit : null);
+  if (!emit) { return; }
+  emit({
+    type: 'notice',
+    text: '[无人值守] 定时任务未弹窗询问，已按推荐自动确认：' + cleanConfirmText(text)
+  });
+}
+
 /* 写入只有两道门：readOnly（代码级硬约束）与 deniedTools（工具黑名单）。
  * 旧的顶层 allowWrite 开关已废弃，这里不再考虑它。 */
 function canWrite(config) {
@@ -147,6 +171,11 @@ function isWriteConfirm(config) {
  * as a rejection (with a distinct message so the model does not retry). */
 async function confirmWriteAction(config, ctx, message, modalText, button) {
   if (!isWriteConfirm(config)) { return true; }
+  /* 定时任务：没人守着弹窗，按推荐（= 主按钮）执行，并把决定写进聊天记录。 */
+  if (isUnattended(ctx)) {
+    emitAutoApprove(ctx, message);
+    return true;
+  }
   const waitMs = confirmTimeoutMs(config);
   emitAwaiting(ctx && ctx.emit, message);
   const answer = await confirmWithTimeout(
@@ -497,23 +526,28 @@ async function runCommandTool(args, config, ctx) {
   const resolvedShell = shellEnv.resolveShell(config.preferShell, args.shell);
   const shell = resolvedShell.shell;
   if (c.confirmShell) {
-    const waitMs = confirmTimeoutMs(config);
-    emitAwaiting(ctx, '等待你确认（命令确认开关）：是否执行 ' + shellEnv.shellLabel(shell) + ' 命令？');
-    const answer = await confirmWithTimeout(
-      vscode.window.showWarningMessage(
-        'ZSZ.Win7.VSCode.AIAgent wants to run a ' + shellEnv.shellLabel(shell) +
-        ' command:\n\n' + command.slice(0, 500) + '\n\n' + proc.describeLimits(config.process),
-        { modal: true },
-        'Run'
-      ),
-      waitMs,
-      function () { emitConfirmTimeout(ctx, '命令执行', waitMs); }
-    );
-    if (answer === CONFIRM_TIMEOUT) {
-      throw new Error('CONFIRM TIMEOUT: nobody answered the command confirmation within ' +
-        Math.round(waitMs / 1000) + ' s. The command was NOT executed. Do not retry automatically.');
+    if (isUnattended(ctx)) {
+      /* 定时任务按推荐放行：否则夜里没人点「Run」，命令确认超时直接把任务掐死。 */
+      emitAutoApprove(ctx, '执行 ' + shellEnv.shellLabel(shell) + ' 命令：' + command.slice(0, 120));
+    } else {
+      const waitMs = confirmTimeoutMs(config);
+      emitAwaiting(ctx, '等待你确认（命令确认开关）：是否执行 ' + shellEnv.shellLabel(shell) + ' 命令？');
+      const answer = await confirmWithTimeout(
+        vscode.window.showWarningMessage(
+          'ZSZ.Win7.VSCode.AIAgent wants to run a ' + shellEnv.shellLabel(shell) +
+          ' command:\n\n' + command.slice(0, 500) + '\n\n' + proc.describeLimits(config.process),
+          { modal: true },
+          'Run'
+        ),
+        waitMs,
+        function () { emitConfirmTimeout(ctx, '命令执行', waitMs); }
+      );
+      if (answer === CONFIRM_TIMEOUT) {
+        throw new Error('CONFIRM TIMEOUT: nobody answered the command confirmation within ' +
+          Math.round(waitMs / 1000) + ' s. The command was NOT executed. Do not retry automatically.');
+      }
+      if (answer !== 'Run') { throw new Error('User rejected the command.'); }
     }
-    if (answer !== 'Run') { throw new Error('User rejected the command.'); }
   }
   const result = await proc.runCommand({
     shell: shell,
@@ -590,6 +624,8 @@ async function runSubtaskTool(args, config, ctx) {
       rules: ctx.rules || {},
       depth: depth + 1,
       taskState: state,
+      // 父轮是无人值守的定时任务：子任务的确认也按推荐自动通过。
+      unattended: ctx.unattended === true,
       // 子代理写的文件也要能撤回：共用父轮的快照列表。
       snapshots: Array.isArray(ctx.snapshots) ? ctx.snapshots : [],
       // A lesson learned inside a subtask is still a lesson: share the sink.
@@ -808,6 +844,9 @@ async function runAgent(params) {
   const onLesson = typeof params.onLesson === 'function' ? params.onLesson : null;
   const autoLearn = params.autoLearn !== false && Boolean(onLesson);
   const pendingFixes = params.pendingFixes instanceof Map ? params.pendingFixes : new Map();
+  /* 无人值守（定时任务）：所有确认弹窗按推荐选项自动通过。子任务继承同一个值，
+   * 否则主任务不问、子任务照样卡在弹窗上。 */
+  const unattended = params.unattended === true;
   const runSeq = ++RUN_SEQ;
   prunePendingFixes(pendingFixes, runSeq);
   const startedAt = Date.now();
@@ -851,6 +890,7 @@ async function runAgent(params) {
     token: token,
     emit: emit,
     depth: depth,
+    unattended: unattended,
     taskState: taskState,
     apiKey: apiKey,
     rules: userRules,
@@ -1046,6 +1086,11 @@ async function runAgent(params) {
         phase('已拦截：' + verdict.reason);
         result = 'TOOL BLOCKED BY CONSTRAINT: ' + verdict.reason +
           '\nDo NOT retry this tool. Answer using the information you already have.';
+      } else if (config.constraints.requireToolApproval && unattended) {
+        /* 定时任务：按推荐（允许）直接执行，不再等一个没人看的弹窗。 */
+        emitAutoApprove(emit, '调用工具 ' + call.tool);
+        phase('正在执行工具 ' + call.tool + '…');
+        result = await runTool(call, config, toolCtx);
       } else if (config.constraints.requireToolApproval) {
         // This is a DIFFERENT gate from constraints.confirmShell. Say so, or
         // users who turned off "命令确认" think the switch is broken.

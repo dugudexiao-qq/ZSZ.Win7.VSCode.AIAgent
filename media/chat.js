@@ -1514,6 +1514,15 @@
           phaseDot.className = lastCheck && lastCheck.level === 'fail' ? 'pdot' : 'pdot done';
         }
         if (queue.length) {
+          /* 这一轮成功了，说明链路本身没问题：把之前因为某次报错 / Stop /
+           * 确认超时而挂起的暂停状态一并放行。否则「暂停」会一直粘着——后面
+           * 每一轮都成功、却仍然停在「已暂停」，排队的任务永远等一个人来点
+           * 「继续队列」，看起来就像成功了也不往下跑。 */
+          if (!hadError) {
+            queuePaused = false;
+            timeoutStreak = 0;
+            renderQueue();
+          }
           /* 超时不算「队列的错」：上一轮等太久被掐断，和排队的下一条内容无关，
            * 接着发；连续超时到上限（多半是服务已经死了）才停下来等人。 */
           var keepGoing = hadError && lastErrorKind === 'timeout' && timeoutStreak < MAX_TIMEOUT_STREAK;
@@ -1531,12 +1540,15 @@
               : '出错了，队列已暂停（点「继续队列」发送剩余 ' + queue.length + ' 条）');
             phaseText.className = 'ptext failed';
           } else {
-            /* 这一轮成功了：超时计数清零，下一条正常发。 */
+            /* 这一轮成功了：超时计数清零，下一条立刻发，不等任何点击。 */
             timeoutStreak = 0;
             setTimeout(pumpQueue, 60);
           }
         } else if (!hadError) {
+          /* 队列空了也要撤掉暂停标记：下次再排队不该一上来就显示「已暂停」。 */
+          queuePaused = false;
           timeoutStreak = 0;
+          renderQueue();
         }
         break;
       case 'mentionFiles':

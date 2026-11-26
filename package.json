@@ -2,7 +2,7 @@
   "name": "win7-ai-agent",
   "displayName": "ZSZ.Win7.VSCode.AIAgent",
   "description": "适用于 Windows 7 + VS Code 1.70.x 的本地大模型 AI Agent。",
-  "version": "1.12.0",
+  "version": "1.12.1",
   "publisher": "dugudexiao",
   "icon": "media/icon.png",
   "author": {
@@ -367,6 +367,11 @@
           "minimum": 10000,
           "maximum": 900000,
           "description": "确认弹窗等待多久（毫秒，默认 120000 = 120 秒）。命令确认、写入确认、工具审批三种弹窗都受它约束：超时后该操作自动视为被拒绝，Agent 不再等待、继续往下走，避免弹窗被遮住或无人点击时整个任务永久挂起。注意：VS Code 1.70 无法用代码关闭弹窗，超时后屏幕上可能仍留有对话框，但再点也不会执行那次操作，可直接忽略或按 Esc 关闭。若不想弹窗，请关闭对应的确认开关。"
+        },
+        "win7Agent.scheduledUnattended": {
+          "type": "boolean",
+          "default": true,
+          "description": "定时任务无人值守（默认开启）：到点自动执行的那一轮里，写入确认、命令确认、工具审批三种弹窗都不再弹出（夜里没人点，等满 120 秒就被当成拒绝，整条任务白跑），改为按推荐选项自动执行，并在聊天区留下「[无人值守] 已按推荐自动确认：…」的记录。关闭后定时任务与手动发起的对话一样逐次弹窗确认。"
         },
         "win7Agent.taskCheck": {
           "type": "boolean",

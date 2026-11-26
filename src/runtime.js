@@ -115,6 +115,8 @@ function getConfig() {
     maxSubtasksPerRun: Number(cfgValue(c, 'maxSubtasksPerRun') || 6),
     timeoutMs: Number(cfgValue(c, 'timeoutMs') || 1000000),
     confirmTimeoutMs: Number(cfgValue(c, 'confirmTimeoutMs') || 120000),
+    /* 定时任务无人值守：确认弹窗改按推荐自动执行（默认开，可关）。 */
+    scheduledUnattended: cfgValue(c, 'scheduledUnattended') !== false,
     stream: Boolean(cfgValue(c, 'stream')),
     extraCaFile: String(cfgValue(c, 'extraCaFile') || '').trim(),
     proxy: String(proxy).trim(),
