@@ -261,6 +261,23 @@ function sortVersions(list) {
   });
 }
 
+/* GitCode keeps a single "latest" badge, and PATCHing a release without
+ * release_status clears it. Set it explicitly on the newest version. */
+async function markLatest(tag, body) {
+  const rel = await api(`/repos/${OWNER}/${REPO}/releases/tags/${encodeURIComponent(tag)}`);
+  if (rel && rel.release_status === 'latest') return;
+  await api(`/repos/${OWNER}/${REPO}/releases/${encodeURIComponent(tag)}`, {
+    method: 'PATCH',
+    body: {
+      tag_name: tag,
+      name: (rel && rel.name) || `ZSZ Win7 AI Agent ${tag}`,
+      body: body || (rel && rel.body) || tag,
+      release_status: 'latest',
+      make_latest: 'true'
+    }
+  });
+}
+
 /* ---- main ---- */
 
 (async function main() {
@@ -341,6 +358,16 @@ function sortVersions(list) {
       console.log(`- ${tag}  失败：${err.message}`);
     } finally {
       if (!DRY) await sleep(1500);
+    }
+  }
+
+  if (!DRY) {
+    const newest = targets[targets.length - 1];
+    try {
+      await markLatest(newest);
+      console.log(`- ${newest}  已标为最新发行版`);
+    } catch (err) {
+      console.log(`- ${newest}  标「最新」失败：${err.message}`);
     }
   }
 
