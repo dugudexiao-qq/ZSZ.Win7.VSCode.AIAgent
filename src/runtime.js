@@ -6,6 +6,7 @@ const { isLocalEndpoint } = require('./llmClient');
 const { normalizeRules, normalizeConstraints, sanitizeRule, compileSystemPrompt, MAX_RULES } = require('./rules');
 const lessonsLib = require('./lessons');
 const profilesLib = require('./profiles');
+const scheduler = require('./scheduler');
 
 const SECRET_KEY = 'win7Agent.apiKey';
 const MEMORY_RULES_KEY = 'win7Agent.memoryRules';
@@ -308,6 +309,36 @@ async function saveSessions(state) {
   }
 }
 
+/* ---- scheduled tasks (persisted in globalState) ----
+ * 定时任务本身存这里（提示词 + 触发时刻），真正的计时器在 extension.js。
+ * 只存数据不存 timer：重启后按 at 重新排一遍，任务不会因为扩展重载丢失。 */
+
+const SCHEDULES_KEY = 'win7Agent.schedules';
+let schedulesCache = [];
+
+function getSchedules() {
+  if (!ctx) { return scheduler.normalizeJobs(schedulesCache, Date.now()); }
+  try {
+    schedulesCache = scheduler.normalizeJobs(ctx.globalState.get(SCHEDULES_KEY, []), Date.now());
+  } catch (e) {
+    log('globalState unavailable, scheduled tasks are kept in memory only: ' + e.message);
+  }
+  return schedulesCache.map(function (job) { return Object.assign({}, job); });
+}
+
+async function saveSchedules(list) {
+  const items = scheduler.normalizeJobs(list, Date.now());
+  schedulesCache = items;
+  if (!ctx) { return false; }
+  try {
+    await ctx.globalState.update(SCHEDULES_KEY, items);
+    return true;
+  } catch (e) {
+    log('globalState.update failed, scheduled tasks kept in memory only: ' + e.message);
+    return false;
+  }
+}
+
 /* ---- named model profiles (persisted in globalState) ----
  * 每个 profile 是一套「名字 + 服务地址 + 模型 + key」。切换 = 把 baseUrl/model
  * 写进设置、key 写进 SecretStorage。key 存在 profile 里只落在本机 globalState，
@@ -548,6 +579,8 @@ module.exports = {
   clearLessons,
   getSessions,
   saveSessions,
+  getSchedules,
+  saveSchedules,
   normalizeSessions,
   MAX_SESSIONS,
   MAX_SESSION_MESSAGES,

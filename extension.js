@@ -16,10 +16,16 @@ const lessonsLib = require('./src/lessons');
 const endpoint = require('./src/endpoint');
 const settingsAudit = require('./src/settingsAudit');
 const rulePicker = require('./src/rulePicker');
+const schedulerLib = require('./src/scheduler');
 
 const APP = manifest.displayName;
 const EXT_ID = manifest.publisher + '.' + manifest.name;
 let provider = null;
+/* 定时任务只有一个计时器（见 armSchedules）；deactivate 时要清掉。 */
+let scheduleTimer = null;
+/* 测试钩子：冒烟测试要真的排一次计时器并让它到点，否则「定时」只能靠读源码
+ * 断言。只暴露排程函数，不暴露数据。 */
+const testHooks = { armSchedules: null, scheduleTick: null };
 
 /* Inspect installed extensions for anything that can collide with ours:
  * duplicate copies of this extension, other publishers reusing win7Agent.*
@@ -146,6 +152,240 @@ function activate(context) {
       provider.invalidateFileIndex();
     })
   );
+
+  /* ---- 定时任务（v1.12.0） ----
+   * 内网算力紧张时，把跑批的任务排到夜里。全局只有一个计时器，指向最近的
+   * 触发点；到点后重新排下一次。任务存在 globalState，扩展重载不会丢；
+   * 但计时器只能活在扩展宿主里 —— VS Code 关着的时候到点不会执行，
+   * 这一点在命令提示和 README 里都写明。 */
+  const SCHEDULE_MAX_WAIT = 60 * 1000;
+
+  function armSchedules() {
+    if (scheduleTimer) { clearTimeout(scheduleTimer); scheduleTimer = null; }
+    const now = Date.now();
+    const jobs = runtime.getSchedules();
+    const plan = schedulerLib.plan(jobs, now, schedulerLib.GRACE_MS);
+    /* 已经有到期的（比如刚启动时发现凌晨的任务错过了）：立刻处理一次，
+     * 否则 nextWakeup 会返回 null，错过的任务永远没人管。 */
+    if (plan.run.length + plan.drop.length + plan.advance.length) {
+      scheduleTimer = setTimeout(scheduleTick, 300);
+      return;
+    }
+    const next = schedulerLib.nextWakeup(jobs, now);
+    if (next === null) { return; }
+    /* 60 秒上限：系统休眠/改时钟后 setTimeout 可能整段跳过，分段重排更稳。 */
+    scheduleTimer = setTimeout(scheduleTick, Math.min(Math.max(next - now, 300), SCHEDULE_MAX_WAIT));
+  }
+
+  async function scheduleTick() {
+    scheduleTimer = null;
+    const now = Date.now();
+    const jobs = runtime.getSchedules();
+    const plan = schedulerLib.plan(jobs, now, schedulerLib.GRACE_MS);
+    let dirty = false;
+    const skipped = [];
+
+    plan.drop.forEach(function (job) {
+      const i = jobs.findIndex(function (x) { return x.id === job.id; });
+      if (i >= 0) { jobs.splice(i, 1); dirty = true; }
+      skipped.push(schedulerLib.fmtClock(job.at) + ' 的一次性任务');
+      runtime.log('scheduled job expired (missed while VS Code was closed): ' + job.id);
+    });
+    plan.advance.forEach(function (job) {
+      const i = jobs.findIndex(function (x) { return x.id === job.id; });
+      if (i < 0) { return; }
+      const nextAt = schedulerLib.advance(jobs[i], now);
+      if (!nextAt) { jobs.splice(i, 1); }
+      dirty = true;
+      skipped.push(schedulerLib.fmtClock(job.at) + ' 的每天任务');
+    });
+    if (skipped.length) {
+      provider.notify('[定时] 错过了 ' + skipped.join('、') + '（当时 VS Code 没在运行），已跳过');
+    }
+
+    const firing = plan.run.slice();
+    firing.forEach(function (job) {
+      const i = jobs.findIndex(function (x) { return x.id === job.id; });
+      if (i < 0) { return; }
+      jobs[i].lastRunAt = now;
+      jobs[i].lastResult = 'fired';
+      if (jobs[i].kind === schedulerLib.DAILY) {
+        if (!schedulerLib.advance(jobs[i], now)) { jobs.splice(i, 1); }
+      } else {
+        jobs.splice(i, 1);
+      }
+      dirty = true;
+    });
+    if (dirty) { await runtime.saveSchedules(jobs); }
+
+    firing.forEach(function (job) {
+      runtime.log('scheduled job fired: ' + job.id + ' (' + schedulerLib.fmtClock(job.at) + ')');
+      provider.runScheduled(job.text, { at: job.at });
+    });
+
+    armSchedules();
+  }
+
+  async function pickScheduleTime(now) {
+    const clockOf = function (ms) { return schedulerLib.fmtClock(ms); };
+    const items = [
+      { label: '$(watch) 30 分钟后', description: clockOf(now + 30 * 60000), at: now + 30 * 60000 },
+      { label: '$(watch) 1 小时后', description: clockOf(now + 60 * 60000), at: now + 60 * 60000 },
+      { label: '$(watch) 2 小时后', description: clockOf(now + 120 * 60000), at: now + 120 * 60000 },
+      { label: '$(calendar) 凌晨 02:00（错峰）', description: schedulerLib.describeAt(schedulerLib.nextDailyAt('02:00', now), now), clock: '02:00' },
+      { label: '$(edit) 指定时刻…', description: '输入 HH:MM，例如 23:30', custom: true }
+    ];
+    return vscode.window.showQuickPick(items, {
+      placeHolder: '什么时候执行？定时器只在 VS Code 运行期间有效'
+    });
+  }
+
+  async function scheduleTask(arg) {
+    const draft = arg && typeof arg === 'object' ? String(arg.text || '') : String(arg || '');
+    let text = draft.trim();
+    if (!text) {
+      const typed = await vscode.window.showInputBox({
+        prompt: '定时执行的任务（写成一句完整的话，到点会原样发给 Agent）',
+        placeHolder: '例如：把 docs 下所有 markdown 的链接检查一遍，汇总失效链接'
+      });
+      if (typed === undefined) { return; }
+      text = typed.trim();
+    }
+    if (!text) {
+      vscode.window.showWarningMessage(APP + ': 任务是空的。先在对话输入框写好内容，再从菜单选「定时发送…」。');
+      return;
+    }
+
+    const now = Date.now();
+    const pick = await pickScheduleTime(now);
+    if (!pick) { return; }
+
+    let clock = pick.clock || '';
+    if (pick.custom) {
+      const typed = await vscode.window.showInputBox({
+        prompt: '几点执行？24 小时制，例如 02:00 / 23:30',
+        value: '02:00',
+        placeHolder: 'HH:MM',
+        validateInput: function (v) {
+          return schedulerLib.parseClock(v) ? '' : '请输入 0-23 时、0-59 分，例如 02:00';
+        }
+      });
+      if (typed === undefined) { return; }
+      clock = typed.trim();
+    }
+
+    let kind = schedulerLib.ONCE;
+    let at = pick.at || 0;
+    let time = '';
+    if (clock) {
+      const repeat = await vscode.window.showQuickPick([
+        { label: '$(history) 每天这个时间', description: '内网错峰跑批的常规用法', value: schedulerLib.DAILY },
+        { label: '$(clock) 只跑这一次', description: '跑完自动失效', value: schedulerLib.ONCE }
+      ], { placeHolder: '重复方式' });
+      if (!repeat) { return; }
+      kind = repeat.value;
+      at = kind === schedulerLib.DAILY
+        ? schedulerLib.nextDailyAt(clock, now)
+        : schedulerLib.clockOnDay(clock, now);
+      /* 一次性任务写的是「今天 02:00」，但现在已经是下午：落到明天，
+       * 否则建完就是一条已经过期的任务。 */
+      if (kind === schedulerLib.ONCE && at <= now) { at = schedulerLib.nextDailyAt(clock, now); }
+      time = clock;
+    }
+
+    const jobs = runtime.getSchedules();
+    if (jobs.length >= schedulerLib.MAX_JOBS) {
+      vscode.window.showWarningMessage(APP + ': 定时任务最多 ' + schedulerLib.MAX_JOBS +
+        ' 条，先在「定时任务：管理」里删掉一些。');
+      return;
+    }
+    const job = schedulerLib.normalizeJob({
+      text: text, kind: kind, at: at, time: time, createdAt: now
+    }, now);
+    if (!job) {
+      vscode.window.showWarningMessage(APP + ': 这个时间无效，任务没有创建。');
+      return;
+    }
+    jobs.push(job);
+    const saved = await runtime.saveSchedules(jobs);
+    armSchedules();
+    if (!saved) {
+      vscode.window.showErrorMessage(APP + ': 定时任务没能写入 globalState，重启后会丢失。');
+      return;
+    }
+    runtime.log('scheduled job created: ' + job.id + ' at ' + new Date(job.at).toISOString() + ' kind=' + job.kind);
+    /* 面板里的草稿已经变成定时任务，输入框清空，免得下次手滑再发一遍。 */
+    if (draft.trim()) { provider.prefill(''); }
+    vscode.window.showInformationMessage(APP + ': 已排定「' + schedulerLib.shortText(text, 20) + '」— ' +
+      schedulerLib.describe(job, Date.now()) + '。到点前请保持 VS Code 开着。');
+  }
+
+  async function manageSchedules() {
+    const now = Date.now();
+    const jobs = runtime.getSchedules();
+    if (!jobs.length) {
+      const add = await vscode.window.showInformationMessage(
+        APP + ': 还没有定时任务。先把任务写在对话输入框，再从 「···」菜单选「定时发送…」。',
+        '立即新建', '取消');
+      if (add === '立即新建') { await vscode.commands.executeCommand('win7Agent.scheduleTask'); }
+      return;
+    }
+    const items = jobs.map(function (job) {
+      return {
+        label: (job.enabled === false ? '$(circle-slash) ' : '$(clock) ') + schedulerLib.describeAt(job.at, now) +
+          ' · ' + schedulerLib.shortText(job.text, 26),
+        description: schedulerLib.describe(job, now),
+        detail: job.text.slice(0, 200),
+        jobId: job.id
+      };
+    });
+    items.push({ label: '$(add) 新建定时任务…', action: 'add' });
+    const pick = await vscode.window.showQuickPick(items, {
+      placeHolder: '定时任务：' + jobs.length + ' 条｜选中可立即执行 / 暂停 / 删除',
+      matchOnDescription: true
+    });
+    if (!pick) { return; }
+    if (pick.action === 'add') {
+      await vscode.commands.executeCommand('win7Agent.scheduleTask');
+      return;
+    }
+    const job = jobs.filter(function (j) { return j.id === pick.jobId; })[0];
+    if (!job) { return; }
+    const actions = [
+      { label: '$(play) 立即执行一次', action: 'run' },
+      { label: (job.enabled === false ? '$(debug-start) 恢复定时' : '$(debug-pause) 暂停定时'), action: 'toggle' },
+      { label: '$(trash) 删除这条定时任务', action: 'delete' }
+    ];
+    const act = await vscode.window.showQuickPick(actions, {
+      placeHolder: schedulerLib.shortText(job.text, 40) + '｜' + schedulerLib.describe(job, now)
+    });
+    if (!act) { return; }
+    if (act.action === 'run') {
+      job.lastRunAt = now;
+      job.lastResult = 'manual';
+      await runtime.saveSchedules(jobs);
+      provider.runScheduled(job.text, { at: now });
+      vscode.window.showInformationMessage(APP + ': 已立即执行「' + schedulerLib.shortText(job.text, 20) + '」。');
+      return;
+    }
+    if (act.action === 'toggle') {
+      job.enabled = job.enabled === false;
+      if (job.enabled && job.kind === schedulerLib.DAILY) {
+        schedulerLib.advance(job, now);
+      }
+      await runtime.saveSchedules(jobs);
+      armSchedules();
+      vscode.window.showInformationMessage(APP + ': 「' + schedulerLib.shortText(job.text, 20) + '」' +
+        (job.enabled ? '已恢复定时：' + schedulerLib.describe(job, Date.now()) : '已暂停。'));
+      return;
+    }
+    const answer = await vscode.window.showWarningMessage(
+      '删除这条定时任务？\n「' + schedulerLib.shortText(job.text, 60) + '」', { modal: true }, '删除');
+    if (answer !== '删除') { return; }
+    await runtime.saveSchedules(jobs.filter(function (j) { return j.id !== job.id; }));
+    armSchedules();
+    vscode.window.showInformationMessage(APP + ': 定时任务已删除。');
+  }
 
   /* 设置体检：同一个扩展 ID 装过多个版本、或曾经装过同名增强版时，旧版的键会
    * 一直躺在 settings.json 里；更隐蔽的是旧版内置默认值被写进用户设置，长期压住
@@ -571,6 +811,17 @@ function activate(context) {
 
   /* ---- 设置体检：旧版本/同名插件留下的键，一键看清、按需清掉 ---- */
 
+  testHooks.armSchedules = armSchedules;
+  testHooks.scheduleTick = scheduleTick;
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('win7Agent.scheduleTask', scheduleTask)
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('win7Agent.manageSchedules', manageSchedules)
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand('win7Agent.auditSettings', async function () {
       const r = await settingsAudit.showReport(context);
@@ -959,12 +1210,18 @@ function activate(context) {
     })
   );
 
+  /* 启动就把定时器排上：任务在 globalState 里，重载后照常生效。 */
+  armSchedules();
+  const pendingJobs = runtime.getSchedules().filter(function (j) { return j.enabled !== false; }).length;
+  if (pendingJobs) { runtime.log('scheduled tasks armed: ' + pendingJobs); }
+
   runtime.log('Endpoint: ' + runtime.getConfig().baseUrl);
   runtime.log('Ready. ' + runtime.getRuleSummary().total + ' standing rules active.');
 }
 
 function deactivate() {
+  if (scheduleTimer) { clearTimeout(scheduleTimer); scheduleTimer = null; }
   if (provider) { provider.dispose(); }
 }
 
-module.exports = { activate, deactivate };
+module.exports = { activate, deactivate, testHooks };

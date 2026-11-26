@@ -229,6 +229,18 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
   white-space: pre-wrap;
   position: relative;
 }
+/* 定时任务的角标：这一轮不是自己打的字，一眼能看出是排的批。 */
+.msg-badge {
+  display: inline-block;
+  margin-bottom: 3px;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 16px;
+  border-radius: 9px;
+  color: var(--vscode-badge-foreground, #ffffff);
+  background: var(--vscode-badge-background, rgba(128, 128, 128, 0.4));
+}
+.msg-body { white-space: pre-wrap; }
 /* 说话人标签：不靠颜色也能分辨，色盲/单色主题下同样可读 */
 .msg.user::before,
 .msg.assistant::before {

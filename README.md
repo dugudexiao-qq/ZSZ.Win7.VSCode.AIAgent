@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.11.18-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.12.0-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -46,9 +46,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.18** 的附件 `zsz-win7-vscode-aiagent-1.11.18.vsix`（约 190 KB）
-   （直链：[Releases/download/v1.11.18](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.18/zsz-win7-vscode-aiagent-1.11.18.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.18.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.12.0** 的附件 `zsz-win7-vscode-aiagent-1.12.0.vsix`（约 190 KB）
+   （直链：[Releases/download/v1.12.0](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.12.0/zsz-win7-vscode-aiagent-1.12.0.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.12.0.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
@@ -72,8 +72,27 @@
 - **下拉菜单**：清空对话、API Key、长期要求（点开后在输入框里直接写，回车即记住）、经验记忆、模型配置、新面板打开、服务地址
 - **多会话**：底部「切换对话 ▾」新建/切换/删除对话，各自独立上下文
 - **输入队列**：回复未结束可继续输入，队列可编辑、撤回、调序；某轮超时后队列自动接着发（连续超时才暂停）
+- **定时任务**：把任务写好，菜单 →「定时发送…」，选 30 分钟后 / 凌晨 02:00 / 自定义时刻，可只跑一次或每天同一时间；到点自动发起一整轮，正在回复时会排队等这一轮结束
 - **过程展示**：工具调用默认折叠一行（如 `✎ 查看文件：src/agent.js · 0.8 s`），失败行直接写中文原因，点标题展开详情
 - **绿色「已完成」≠ 事情真做成了**：以回答下方的自检行为准
+
+## 定时任务（错峰跑批）
+
+内网算力白天紧、夜里松，可以把整块的活排到没人用的时段：
+
+1. 在输入框里写好任务（一句完整的话，例如「把 `docs/` 下所有 markdown 的外链检查一遍，汇总失效的」）
+2. 点右上「···」→ **定时发送…**
+3. 选时间：30 分钟后 / 1 小时后 / 2 小时后 / **凌晨 02:00（错峰）** / 指定时刻（`HH:MM`）
+4. 选重复方式：**每天这个时间**（夜里跑批的常规用法）或**只跑这一次**
+5. 到点后 Agent 自己发起一整轮，对话里那条消息带 `⏰ 02:00 定时` 角标，一眼能看出不是自己打的字
+
+管理：`Ctrl+Shift+P` → `定时任务：管理`，可以看下次执行时间、**立即执行一次**、暂停/恢复、删除。
+
+三条要知道的限制与约定：
+
+- **VS Code 必须开着**。定时器活在扩展宿主进程里，关掉 VS Code 到点不会执行。错过的任务直接跳过（一次性任务失效；每天任务排到第二天），不会在你中午开机时补跑凌晨两点的批。
+- **确认弹窗照旧会弹**。夜里没人点「写入确认 / 命令确认」会按 `confirmTimeoutMs` 超时（默认 120 秒），那一轮就中断了。跑批请提前把写入模式、确认开关调成适合无人值守的状态。
+- **任务最多 20 条**，随窗口生命周期存活；存在 globalState 里，重载/重启不丢。
 
 ## 配置速查
 
@@ -109,6 +128,7 @@
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.12.0**：新增**定时任务**。内网算力白天紧张，可以把跑批排到夜里：输入框写好任务 → 菜单「定时发送…」→ 选 30 分钟后 / 凌晨 02:00 / 自定义 `HH:MM`，并可选「每天这个时间」或「只跑一次」。到点由扩展宿主自己发起一整轮（历史里那条消息带 `⏰ 02:00 定时` 角标），正在回复时排队等这一轮结束；`Ctrl+Shift+P` →「定时任务：管理」可立即执行、暂停、删除。任务存 globalState，重载不丢；计时器只有一个，分段重排以抵抗系统休眠/改时钟。限制写进 README：VS Code 关着不会执行，错过的直接跳过（不补跑）。
 - **v1.11.18**：修「任务超时后排队消息卡住」。以前任何一轮出错都会把暂存队列置为「已暂停」，得手动点「继续队列」；可超时（模型服务慢、GGUF 刚加载、内网抖动）跟队列里下一条任务没关系，下一条往往很短就能跑通。现在宿主把失败分类随错误一起发给面板（`src/failure.js`）：超时 → 队列继续，并在对话里留一行「上一轮请求超时，队列继续发送剩余 N 条」；连续 2 条超时才暂停（多半是服务真的挂了），认证失败 / 地址写错 / 弹窗没人点 / 手动 Stop 仍然暂停。一键「继续队列」会重置这个计数。
 - **v1.11.17**：修「@ 引用只列出一部分文件」。清单以前来自 VS Code 的 `findFiles`：上限只有 300 个、会被 `files.exclude`/`search.exclude` 过滤，而且刚打开窗口、搜索索引还没就绪时首次查询会返回空或残缺——这正是「首次载入打 @ 很多文件找不到」的原因。现在扩展自己按广度优先遍历工作区（`workspace.fs`），只跳过 `node_modules`/`.git` 这类目录，上限 4000 个文件、深度 12、6 秒超时；面板一出现就在后台预热索引，第一次打 @ 不用等；清单为空或读取失败会在弹层里说明原因，并提供「重新读取工作区文件」。拖拽文件按名匹配也改用同一份清单，命中率一并提高。
 - **v1.11.16**：修「长期要求」输入不进去。以前要先在列表里拉到「记住一条新要求」再回车，弹出第二层输入框；直接在列表里打字回车，要么没反应，要么把过滤命中的第一条旧要求删了。现在这个列表本身就是输入框：打字时第一行变成「记住：<你打的字>」，回车即新增；重复内容提示「已经记过」，不会重复添加。删除旧要求改为二次确认，避免空回车误删。同时去掉 `ignoreFocusOut`（老版本上会让输入框留着却收不到键盘），命令面板里也能直接搜到「长期要求」。

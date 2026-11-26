@@ -21,6 +21,7 @@
   var rulesBtn = document.getElementById('rules');
   var lessonsBtn = document.getElementById('lessons');
   var profilesBtn = document.getElementById('profiles');
+  var schedBtn = document.getElementById('schedbtn');
   var attachEl = document.getElementById('attachments');
   /* 标题旁的 4 个运行开关（写入模式 / 写入确认 / 命令确认 / 子任务）。
    * 常看常切，所以常驻图标 + 悬停说明，状态变化只改图标与 class。 */
@@ -188,18 +189,37 @@
     messagesEl.appendChild(el);
   }
 
-  function addMessage(role, text) {
+  /* badge：气泡左上角的小角标（目前用于「⏰ 02:00 定时」）。文本放进子节点
+   * 而不是直接 el.textContent，否则设置 textContent 会把角标一起清掉。 */
+  function addMessage(role, text, badge) {
     if (role === 'user') { addTurnDivider(); }
     var el = document.createElement('div');
     el.className = 'msg ' + role;
     if (role === 'assistant' || role === 'error') {
       renderRich(el, text);
+    } else if (badge) {
+      var chip = document.createElement('span');
+      chip.className = 'msg-badge';
+      chip.textContent = badge;
+      el.appendChild(chip);
+      var body = document.createElement('div');
+      body.className = 'msg-body';
+      body.textContent = text;
+      el.appendChild(body);
     } else {
       el.textContent = text;
     }
     messagesEl.appendChild(el);
     scrollDown();
     return el;
+  }
+
+  /* 定时任务的时间戳在历史里是毫秒数，显示成 02:00 就够。 */
+  function clockLabel(ts) {
+    var d = new Date(Number(ts) || Date.now());
+    var h = d.getHours();
+    var m = d.getMinutes();
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
   }
 
   /* 撤回条目（v1.10）：本轮 Agent 真实写入了文件时，在回复下方给一行
@@ -854,6 +874,20 @@
   if (profilesBtn) {
     profilesBtn.addEventListener('click', function () { vscode.postMessage({ type: 'profiles' }); });
   }
+  if (schedBtn) {
+    /* 定时发送：内容是输入框里现成的那段文字，时间由宿主弹选择器。
+     * 输入框空着就直接提示，不要弹一个「定时什么」的空白窗口。 */
+    schedBtn.addEventListener('click', function () {
+      var text = inputEl.value.trim();
+      if (!text) {
+        phaseText.textContent = '先在输入框写好要定时执行的任务';
+        phaseText.className = 'ptext awaiting';
+        inputEl.focus();
+        return;
+      }
+      vscode.postMessage({ type: 'scheduleDraft', text: text });
+    });
+  }
   if (flagWrite) {
     flagWrite.addEventListener('click', function () { vscode.postMessage({ type: 'writeMode' }); });
   }
@@ -1335,6 +1369,18 @@
         var fileEl = addMessage('file', msg.text || '已导入文件');
         if (msg.path) { fileEl.title = msg.path; }
         break;
+      case 'userMessage':
+        /* 定时任务由宿主发起，webview 没有走过 dispatch()，用户气泡得补上。 */
+        addMessage('user', msg.text || '', msg.scheduledAt ? '⏰ ' + clockLabel(msg.scheduledAt) + ' 定时' : '');
+        hadError = false;
+        lastErrorKind = '';
+        lastCheck = null;
+        currentBubble = null;
+        currentRaw = '';
+        resetToolDedupe();
+        phaseText.textContent = '定时任务开始执行…';
+        phaseText.className = 'ptext';
+        break;
       case 'replay':
         // The host rebuilt (panel reopened) or switched the session: wipe the
         // transcript and re-render the persisted history so the conversation
@@ -1345,7 +1391,8 @@
         attachments = [];
         renderAttachments();
         (msg.items || []).forEach(function (it) {
-          addMessage(it.role === 'assistant' ? 'assistant' : 'user', it.content || '');
+          addMessage(it.role === 'assistant' ? 'assistant' : 'user', it.content || '',
+            it.scheduled ? '⏰ ' + clockLabel(it.scheduled) + ' 定时' : '');
         });
         scrollDown();
         break;

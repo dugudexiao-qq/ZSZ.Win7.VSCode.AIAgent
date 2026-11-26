@@ -798,9 +798,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.11.18, no built-in endpoint/model, 22 commands, all activation events', function () {
+  check('manifest: 1.12.0, no built-in endpoint/model, 24 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.18');
+    assert.strictEqual(manifest.version, '1.12.0');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -833,7 +833,7 @@ try {
     assert.strictEqual(props['win7Agent.constraints.deniedTools'].default.indexOf('runCommand'), -1, 'runCommand must not be blacklisted by default');
     const factoryRules = props['win7Agent.defaultRules'].default.join('\n');
     assert.ok(!/不修改任何文件|默认只做解释和建议/.test(factoryRules), 'factory rules must NOT forbid writing files');
-    assert.strictEqual(manifest.contributes.commands.length, 22);
+    assert.strictEqual(manifest.contributes.commands.length, 24);
     const ids = manifest.contributes.commands.map(function (c) { return c.command; });
     assert.ok(ids.indexOf('win7Agent.switchProfile') !== -1, 'model-profile switcher command must exist');
     assert.ok(ids.indexOf('win7Agent.toggleShellConfirm') !== -1, 'shell-confirmation toggle command must exist');
@@ -940,6 +940,83 @@ try {
     const cv = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
     assert.ok(/failure\.classify\(text\)/.test(cv), 'the host must classify the failure');
     assert.ok(/type: 'error', text: text, kind: kind/.test(cv), 'the error event must carry the kind');
+  });
+
+  /* v1.12.0：定时任务的算术全在 scheduler 里，触发器只是个 setTimeout。
+   * 这里把「今天/明天、宽限内执行、错过跳过」三种边界钉死。 */
+  check('scheduler: clock parsing, daily rollover, and grace-based firing', function () {
+    const sch = require('../src/scheduler');
+    const noon = new Date(2026, 10, 26, 12, 0, 0, 0).getTime();
+
+    assert.deepStrictEqual(sch.parseClock('2:5'), { h: 2, m: 5 });
+    assert.deepStrictEqual(sch.parseClock('02：30'), { h: 2, m: 30 }, 'full-width colon must work');
+    assert.deepStrictEqual(sch.parseClock('２：３０'), { h: 2, m: 30 }, 'full-width digits must work');
+    assert.deepStrictEqual(sch.parseClock('2点30'), { h: 2, m: 30 });
+    assert.deepStrictEqual(sch.parseClock('2点'), { h: 2, m: 0 });
+    assert.deepStrictEqual(sch.parseClock('23:59'), { h: 23, m: 59 });
+    ['24:00', '02:60', 'abc', '', '-1:00'].forEach(function (bad) {
+      assert.strictEqual(sch.parseClock(bad), null, 'must reject: ' + bad);
+    });
+
+    /* 02:00 在中午看已经是过去时 → 明天；23:00 还没到 → 今天 */
+    assert.strictEqual(new Date(sch.nextDailyAt('02:00', noon)).getDate(), 27);
+    assert.strictEqual(new Date(sch.nextDailyAt('23:00', noon)).getDate(), 26);
+    assert.strictEqual(sch.nextDailyAt('bogus', noon), null);
+
+    const jobs = [
+      { id: 'a', text: 'x', kind: 'once', at: noon - 60000, enabled: true },
+      { id: 'b', text: 'y', kind: 'once', at: noon - 3 * 3600e3, enabled: true },
+      { id: 'c', text: 'z', kind: 'daily', time: '02:00', at: noon - 3 * 3600e3, enabled: true },
+      { id: 'd', text: 'w', kind: 'once', at: noon + 60000, enabled: true },
+      { id: 'e', text: 'v', kind: 'once', at: noon - 60000, enabled: false }
+    ];
+    const plan = sch.plan(jobs, noon, sch.GRACE_MS);
+    assert.deepStrictEqual(plan.run.map(function (j) { return j.id; }), ['a'],
+      'a one-minute-late job still runs; a disabled one does not');
+    assert.deepStrictEqual(plan.drop.map(function (j) { return j.id; }), ['b'],
+      'a once job missed by hours is dropped, not replayed at noon');
+    assert.deepStrictEqual(plan.advance.map(function (j) { return j.id; }), ['c'],
+      'a daily job missed by hours moves to tomorrow, not today');
+
+    const daily = { id: 'c', kind: 'daily', time: '02:00', at: noon };
+    assert.strictEqual(new Date(sch.advance(daily, noon)).getDate(), 27);
+    assert.strictEqual(sch.advance({ kind: 'once' }, noon), 0, 'once jobs have no next run');
+
+    assert.strictEqual(sch.nextWakeup(jobs, noon), noon + 60000, 'the timer targets the nearest future job');
+    assert.strictEqual(sch.describeAt(noon, noon), '今天 12:00');
+    assert.strictEqual(sch.describeAt(noon + 86400e3, noon), '明天 12:00');
+    assert.ok(/小时/.test(sch.humanizeGap(2 * 3600e3 + 7 * 60e3)));
+  });
+
+  check('scheduler: jobs are normalized, capped, and the timer is armed on activate', function () {
+    const sch = require('../src/scheduler');
+    const now = Date.now();
+    const list = sch.normalizeJobs([
+      { text: '   ', at: now },
+      { text: 'b', kind: 'once', at: now + 5000 },
+      { text: 'a', kind: 'once', at: now + 1000 },
+      { text: 'c', kind: 'daily', time: '02:00' }
+    ], now);
+    assert.deepStrictEqual(list.map(function (j) { return j.text; }), ['a', 'b', 'c'],
+      'empty tasks are dropped and the rest are sorted by fire time');
+    assert.ok(list[2].at > now, 'a daily job without an absolute time gets one computed');
+    assert.strictEqual(list[2].time, '02:00', 'the clock string survives normalization');
+
+    const many = [];
+    for (let i = 0; i < 30; i++) { many.push({ text: 't' + i, at: now + i * 1000 }); }
+    assert.strictEqual(sch.normalizeJobs(many, now).length, sch.MAX_JOBS,
+      'globalState must not grow without bound');
+
+    const rt = fs.readFileSync(path.join(__dirname, '..', 'src', 'runtime.js'), 'utf8');
+    assert.ok(/SCHEDULES_KEY/.test(rt) && /function getSchedules/.test(rt) && /function saveSchedules/.test(rt),
+      'scheduled tasks must persist in globalState, not just memory');
+
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'extension.js'), 'utf8');
+    assert.ok(/schedulerLib\.plan\(/.test(ext), 'the tick must use the pure planner');
+    assert.ok(/armSchedules\(\);/.test(ext), 'activate must arm the timer');
+    assert.ok(/clearTimeout\(scheduleTimer\)/.test(ext), 'the timer must be cleared on deactivate');
+    assert.ok(/Math\.min\(Math\.max\(next - now/.test(ext),
+      'long waits must be chunked: a 3-week setTimeout is unreliable after sleep');
   });
 
   checkAsync('@ mention index walks the workspace itself, and never caches an empty result', async function () {
@@ -1051,7 +1128,7 @@ try {
   check('imported files are dropped from the composer once the message is sent', function () {
     const view = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
     assert.ok(/_consumeAttachments\(\)\s*\{/.test(view), 'host must have a way to drop the chips');
-    const send = /async _handleSend\(text, entry\)\s*\{([\s\S]*?)\n  \}/.exec(view);
+    const send = /async _handleSend\(text, entry(?:, meta)?\)\s*\{([\s\S]*?)\n  \}/.exec(view);
     assert.ok(send, '_handleSend must exist');
     assert.ok(/this\._consumeAttachments\(\)/.test(send[1]),
       '_handleSend must clear the attachment chips after accepting the message');

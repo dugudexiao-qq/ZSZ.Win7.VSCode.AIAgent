@@ -9,6 +9,7 @@ const compact = require('./compact');
 const snapLib = require('./snapshots');
 const fileIndex = require('./fileIndex');
 const failure = require('./failure');
+const schedulerLib = require('./scheduler');
 
 const EXT_ID = manifest.publisher + '.' + manifest.name;
 
@@ -50,6 +51,9 @@ class ChatViewProvider {
     this._fixMaps = Object.create(null);
     this._cts = null;
     this._busy = false;
+    /* 定时任务撞上正在回复时的等待队列：宿主侧排队，这一轮结束立刻接着跑。
+     * 前端那条队列是「用户手动打的字」，两者互不干扰。 */
+    this._autoPending = [];
     this._lastAnswer = '';
     /* @ 引用的文件清单：自己遍历工作区（不依赖搜索索引），带 60s 缓存。
      * 刚打开窗口时 VS Code 的 search provider 往往还没就绪，findFiles 会
@@ -183,7 +187,11 @@ class ChatViewProvider {
         text = text.slice(0, REPLAY_MAX_CHARS) +
           '\n\n（内容过长，仅显示前 ' + REPLAY_MAX_CHARS + ' 字符；完整内容仍在对话上下文中）';
       }
-      return { role: role, content: text };
+      const item = { role: role, content: text };
+      /* 定时发出去的消息在历史里带 scheduled 时间戳：重开面板后仍能看出
+       * 这一轮不是自己打的，而是凌晨两点排的批。 */
+      if (m && m.scheduled) { item.scheduled = Number(m.scheduled) || 1; }
+      return item;
     });
   }
 
@@ -306,6 +314,7 @@ class ChatViewProvider {
           '<button id="rules" class="menu-item" title="管理长期要求">长期要求 (0)</button>' +
           '<button id="lessons" class="menu-item" title="查看/删除自动总结的经验">经验记忆 (0)</button>' +
           '<button id="profiles" class="menu-item" title="多套模型配置一键切换">模型配置</button>' +
+          '<button id="schedbtn" class="menu-item" title="把输入框里的内容排到指定时间执行（内网错峰、夜里跑批）">定时发送…</button>' +
           '<div class="menu-sep"></div>' +
           '<button id="panelbtn" class="menu-item" title="在编辑器区域打开独立聊天窗">在新面板打开</button>' +
           '<button id="endpoint" class="menu-item" title="设置服务地址 / 端口">服务地址 / 端口</button>' +
@@ -394,6 +403,12 @@ class ChatViewProvider {
 
   prefill(text) {
     this._post({ type: 'prefill', text: text }, true);
+  }
+
+  /* 系统级提示（定时任务跳过了、排队了）：面板没开着就先存着，
+   * 下次挂载时一起投递，免得「发生了什么」完全没有记录。 */
+  notify(text) {
+    this._post({ type: 'notice', text: String(text || '') }, true);
   }
 
   /* Used by the Import File command: put the file into the conversation and
@@ -535,6 +550,9 @@ class ChatViewProvider {
         return this._revertSnapshot(String(msg.id || ''));
       case 'send':
         return this._handleSend(String(msg.text || ''), entry);
+      case 'scheduleDraft':
+        /* 面板把输入框里的任务交给宿主，由宿主弹时间选择器（命令也能走同一条路）。 */
+        return vscode.commands.executeCommand('win7Agent.scheduleTask', { text: String(msg.text || '') });
       case 'stop':
         if (this._cts) { this._cts.cancel(); }
         break;
@@ -654,7 +672,7 @@ class ChatViewProvider {
     return hit || name;
   }
 
-  async _handleSend(text, entry) {
+  async _handleSend(text, entry, meta) {
     if (!text.trim()) { return; }
     if (this._busy) {
       // Another webview (e.g. the side-by-side panel) may have sent while the
@@ -670,9 +688,20 @@ class ChatViewProvider {
       return;
     }
 
+    /* 定时任务没有 webview 发消息：这一轮的「用户气泡」得由宿主补上，
+     * 否则面板里只会看到回答，前提条件凭空消失。 */
+    const scheduledAt = meta && meta.scheduled ? Number(meta.scheduled) || Date.now() : 0;
+    if (scheduledAt) {
+      this._post({ type: 'userMessage', text: text, scheduledAt: scheduledAt }, false);
+      this._post({ type: 'notice', text: '[定时] ' + schedulerLib.fmtClock(scheduledAt) +
+        ' 的定时任务开始执行' }, false);
+    }
+
     this._busy = true;
     this._cts = new vscode.CancellationTokenSource();
-    this._history.push({ role: 'user', content: text });
+    const userTurn = { role: 'user', content: text };
+    if (scheduledAt) { userTurn.scheduled = scheduledAt; }
+    this._history.push(userTurn);
     this._touchSessionTitle(text);
     /* 引入的文件已经在历史里，标签到此为止（「回答结束后还留在输入框」）。 */
     this._consumeAttachments();
@@ -755,7 +784,38 @@ class ChatViewProvider {
       this._saveSessions();
       // A run may have written files or toggled switches: refresh the UI state.
       this.postState();
+      /* 这一轮结束后，把等待中的定时任务接上（错峰时连排两三条很常见）。 */
+      this._drainAutoQueue();
     }
+  }
+
+  /* ---- scheduled tasks ---- */
+
+  /* 到点了：没在回复就立刻跑，正在回复就排队等这一轮结束。 */
+  runScheduled(text, meta) {
+    const body = String(text || '');
+    if (!body.trim()) { return Promise.resolve(false); }
+    const info = { scheduled: (meta && meta.at) || Date.now() };
+    if (this._busy) {
+      this._autoPending.push({ text: body, meta: info });
+      this._post({ type: 'notice', text: '[定时] 正在回复中，定时任务已排队，这一轮结束立即执行（等待 ' +
+        this._autoPending.length + ' 条）' }, false);
+      return Promise.resolve(false);
+    }
+    return this._handleSend(body, null, info);
+  }
+
+  _drainAutoQueue() {
+    if (this._busy || !this._autoPending.length) { return; }
+    const next = this._autoPending.shift();
+    const self = this;
+    /* 让 finally 里的 done / state 先落到 webview，再起下一轮。 */
+    setTimeout(function () {
+      if (self._busy) { self._autoPending.unshift(next); return; }
+      self._handleSend(next.text, null, next.meta).catch(function (e) {
+        runtime.log('queued scheduled run failed: ' + (e && e.message ? e.message : e));
+      });
+    }, 60);
   }
 
   dispose() {

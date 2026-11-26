@@ -337,7 +337,7 @@ async function main() {
   const ext = require('../extension');
   await ext.activate(context);
 
-  assert.strictEqual(Object.keys(commands).length, 22, 'all 22 commands must be registered');
+  assert.strictEqual(Object.keys(commands).length, 24, 'all 24 commands must be registered');
   assert.ok(registeredProvider, 'webview provider must be registered');
   assert.ok(commands['win7Agent.toggleWriteMode'], 'write-mode toggle must be registered');
   assert.ok(commands['win7Agent.toggleShellConfirm'], 'shell-confirmation toggle must be registered');
@@ -412,7 +412,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.18');
+  assert.strictEqual(info.version, '1.12.0');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -640,7 +640,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.18');
+  assert.strictEqual(state.version, '1.12.0');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1322,6 +1322,79 @@ async function main() {
   assert.strictEqual(authErr.queueSafe, false, 'a 401 must pause the queue');
   failStatus = 503;
   console.log('  PASS  error events carry a queue policy: timeout continues, 401 pauses');
+
+  /* v1.12.0：定时任务到点由宿主自己发起一轮——webview 没开、也没人按 Send，
+   * 用户气泡得宿主补，历史里要留下「这是定时发的」。 */
+  settings['win7Agent.baseUrl'] = 'http://127.0.0.1:' + port + '/v1';
+  events.length = 0;
+  scriptedResponses.length = 0;
+  scriptedResponses.push('夜里跑完了，链接检查报告已生成。');
+  const beforeSched = registeredProvider._history.length;
+  const firedAt = Date.now();
+  await registeredProvider.runScheduled('把 docs 下的链接检查一遍', { at: firedAt });
+  const schedUser = events.filter(function (e) { return e.type === 'userMessage'; }).pop();
+  assert.ok(schedUser, 'a scheduled run must render the user bubble itself');
+  assert.strictEqual(schedUser.text, '把 docs 下的链接检查一遍');
+  assert.strictEqual(schedUser.scheduledAt, firedAt);
+  assert.ok(events.some(function (e) { return e.type === 'notice' && /\[定时\]/.test(e.text || ''); }),
+    'the transcript must say this round came from the scheduler');
+  const schedTurn = registeredProvider._history[beforeSched];
+  assert.strictEqual(schedTurn.role, 'user');
+  assert.strictEqual(schedTurn.scheduled, firedAt, 'history must remember the scheduled fire time');
+  assert.strictEqual(registeredProvider._history[beforeSched + 1].role, 'assistant');
+  assert.strictEqual(events.filter(function (e) { return e.type === 'error'; }).length, 0,
+    'a scheduled run must not report an error: ' + JSON.stringify(events.filter(function (e) { return e.type === 'error'; })));
+
+  /* 正在回复时到点：宿主侧排队，这一轮结束立刻接上，而不是丢掉。 */
+  registeredProvider._busy = true;
+  const queuedRun = await registeredProvider.runScheduled('排队等这一轮结束的那条', { at: Date.now() });
+  assert.strictEqual(queuedRun, false, 'a busy session must not start a second run');
+  assert.strictEqual(registeredProvider._autoPending.length, 1, 'the scheduled task must wait, not disappear');
+  assert.ok(events.some(function (e) { return e.type === 'notice' && /排队/.test(e.text || ''); }),
+    'the user must be told the scheduled task is waiting');
+  registeredProvider._busy = false;
+  events.length = 0;
+  scriptedResponses.push('排队的那条也跑完了。');
+  registeredProvider._drainAutoQueue();
+  await new Promise(function (r) { setTimeout(r, 900); });
+  assert.strictEqual(registeredProvider._autoPending.length, 0, 'the queued scheduled task must eventually run');
+  assert.ok(events.some(function (e) { return e.type === 'done'; }), 'the queued run must finish a full turn');
+  assert.ok(events.filter(function (e) { return e.type === 'delta'; })
+    .map(function (e) { return e.text; }).join('').indexOf('排队的那条也跑完了') !== -1,
+    'the queued run must produce its answer');
+
+  /* 任务本身落 globalState：扩展重载后按 at 重新排，不会丢。 */
+  await runtime.saveSchedules([{ text: '每天夜里跑一次', kind: 'daily', time: '02:00', at: Date.now() + 3600e3 }]);
+  const persisted = runtime.getSchedules();
+  assert.strictEqual(persisted.length, 1);
+  assert.strictEqual(persisted[0].kind, 'daily');
+  assert.strictEqual(persisted[0].time, '02:00');
+  assert.ok(persisted[0].at > Date.now(), 'a daily job must carry a future fire time');
+  await runtime.saveSchedules([]);
+  assert.strictEqual(runtime.getSchedules().length, 0);
+
+  /* 真的排一次计时器：这是整个功能的骨架——到点把任务变成一轮对话，然后
+   * 把一次性任务从列表里删掉。只测纯函数的话，接错线也发现不了。 */
+  await runtime.saveSchedules([{ text: '到点自动跑的这一条', kind: 'once', at: Date.now() + 700 }]);
+  assert.strictEqual(runtime.getSchedules().length, 1, 'precondition: one job is scheduled');
+  events.length = 0;
+  scriptedResponses.length = 0;
+  scriptedResponses.push('到点跑完了。');
+  ext.testHooks.armSchedules();
+  await new Promise(function (r) { setTimeout(r, 2500); });
+  assert.strictEqual(runtime.getSchedules().length, 0, 'a fired once-job must be removed from the list');
+  assert.ok(events.some(function (e) { return e.type === 'userMessage' && /到点自动跑的这一条/.test(e.text || ''); }),
+    'the timer must actually start a turn: ' + JSON.stringify(events.map(function (e) { return e.type; })));
+  assert.ok(events.some(function (e) { return e.type === 'done'; }), 'the fired run must finish');
+
+  const cvSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
+  const chatSource = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
+  const cssSource = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.css'), 'utf8');
+  assert.ok(/id="schedbtn"/.test(cvSource), 'the menu must offer 定时发送');
+  assert.ok(/scheduleDraft/.test(chatSource), 'the composer must hand the draft to the host');
+  assert.ok(/case 'userMessage'/.test(chatSource), 'the webview must render host-initiated user bubbles');
+  assert.ok(/\.msg-badge/.test(cssSource), 'scheduled bubbles need a visible badge');
+  console.log('  PASS  scheduled tasks fire a full turn, queue when busy, and persist across reloads');
 
   const diagRoot = fsmod.mkdtempSync(path.join(os.tmpdir(), 'zsz-diag-'));
   const savedFoldersForDiag = vscodeStub.workspace.workspaceFolders;

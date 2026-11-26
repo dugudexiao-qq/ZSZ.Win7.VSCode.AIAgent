@@ -470,6 +470,43 @@ check('profiles menu button exists and posts the profiles message (v1.10.0)', fu
   assert.strictEqual(req.length, 1, 'clicking the button must open the profile switcher');
 });
 
+/* ---- v1.12.0 定时任务：菜单入口 + 定时气泡角标 ---- */
+
+check('the menu hands the typed task to the scheduler, and refuses an empty box', function () {
+  const btn = els.schedbtn;
+  assert.ok(btn, 'the menu must contain 定时发送…');
+  posted.length = 0;
+  input.value = '   ';
+  fire(btn, 'click');
+  assert.strictEqual(posted.filter(function (m) { return m.type === 'scheduleDraft'; }).length, 0,
+    'an empty composer must not open the time picker');
+  assert.ok(/先在输入框写好/.test(els.phaseText.textContent), 'the status line must say what is missing');
+
+  input.value = '把 docs 下的链接检查一遍';
+  fire(btn, 'click');
+  const req = posted.filter(function (m) { return m.type === 'scheduleDraft'; });
+  assert.strictEqual(req.length, 1);
+  assert.strictEqual(req[0].text, '把 docs 下的链接检查一遍');
+});
+
+check('a scheduled turn carries a clock badge, live and after a replay', function () {
+  const at = new Date(2026, 10, 26, 2, 0, 0, 0).getTime();
+  hostMessage({ type: 'userMessage', text: '夜里跑的任务', scheduledAt: at });
+  let users = els.messages.children.filter(function (c) { return c.className === 'msg user'; });
+  let last = users[users.length - 1];
+  assert.ok(/02:00/.test(last.textContent), 'the badge must show the fire time: ' + last.textContent);
+  assert.ok(/定时/.test(last.textContent), 'the badge must say 定时');
+  assert.ok(/夜里跑的任务/.test(last.textContent), 'the task text must still be there');
+
+  hostMessage({ type: 'replay', items: [
+    { role: 'user', content: '历史里的定时任务', scheduled: at },
+    { role: 'assistant', content: '跑完了。' }
+  ] });
+  users = els.messages.children.filter(function (c) { return c.className === 'msg user'; });
+  assert.strictEqual(users.length, 1);
+  assert.ok(/02:00/.test(users[0].textContent), 'a replayed scheduled turn must keep its badge');
+});
+
 /* ---- v1.11.18 队列策略：超时继续，其它错误暂停 ----
  * 用真 DOM 桩跑 media/chat.js，模拟「一轮超时 + 队列里还有消息」，
  * 断言下一条会被真的发出去，而不是停在「已暂停」。 */
