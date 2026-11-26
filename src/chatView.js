@@ -375,6 +375,7 @@ class ChatViewProvider {
       hasKey: Boolean(key),
       localEndpoint: config.localEndpoint,
       model: config.model,
+      modelNote: runtime.getModelScopeNote(),
       baseUrl: config.baseUrl,
       author: info.author,
       email: info.email,

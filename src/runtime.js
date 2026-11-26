@@ -134,6 +134,30 @@ function getConfig() {
   };
 }
 
+/* 模型名可能在多个 scope 里都写着：用户改了「用户设置」，工作区 settings.json
+ * 里还留着旧的（反之亦然）。生效值只看最高优先级那一处，界面显示的也是它。
+ * 这时候光把新名字刷上去没用——得说清楚「你改的那处被谁盖住了」。 */
+function getModelScopeNote() {
+  const c = vscode.workspace.getConfiguration('win7Agent');
+  if (!c || typeof c.inspect !== 'function') { return ''; }
+  let seen;
+  try { seen = c.inspect('model'); } catch (e) { return ''; }
+  if (!seen) { return ''; }
+
+  const effective = String(cfgValue(c, 'model') || '');
+  const layers = [
+    { label: '工作区文件夹设置', value: seen.workspaceFolderValue },
+    { label: '工作区设置', value: seen.workspaceValue },
+    { label: '用户设置', value: seen.globalValue }
+  ].filter(function (l) { return l.value !== undefined && String(l.value) !== ''; });
+
+  const winner = layers.filter(function (l) { return String(l.value) === effective; })[0];
+  const overridden = layers.filter(function (l) { return String(l.value) !== effective; });
+  if (!overridden.length) { return ''; }
+  const losers = overridden.map(function (l) { return l.label + '「' + l.value + '」'; }).join('、');
+  return '当前生效：' + (winner ? winner.label : '默认值') + '；' + losers + ' 未生效';
+}
+
 function getExtensionInfo() {
   const author = manifest.author && manifest.author.name ? manifest.author.name : String(manifest.author || '');
   return {
@@ -627,6 +651,7 @@ module.exports = {
   applyProfile,
   settingTarget,
   describeSettingScope,
+  getModelScopeNote,
   log,
   getLogLines,
   showOutput

@@ -798,9 +798,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.12.3, no built-in endpoint/model, 25 commands, all activation events', function () {
+  check('manifest: 1.12.4, no built-in endpoint/model, 25 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.12.3');
+    assert.strictEqual(manifest.version, '1.12.4');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -1334,6 +1334,20 @@ try {
       'the check-update command must activate the extension');
     const cmd = manifest.contributes.commands.filter(function (c) { return c.command === 'win7Agent.checkUpdate'; })[0];
     assert.ok(cmd && /更新/.test(cmd.title), 'command title must be findable by 更新');
+  });
+
+  check('a settings change repaints the model badge, even when another scope wins', function () {
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'extension.js'), 'utf8');
+    assert.ok(/affectsConfiguration\('win7Agent'\)/.test(ext),
+      'the host must listen for win7Agent settings changes');
+    assert.ok(/affectsConfiguration\('win7Agent'\)[\s\S]{0,800}refresh\(\)/.test(ext),
+      'a settings change must push a fresh state to the panel (otherwise the badge stays on llama.cpp)');
+    const cv = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
+    assert.ok(cv.indexOf('getModelScopeNote') !== -1,
+      'the state sent to the panel must explain which scope actually supplies the model');
+    const chat = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
+    assert.ok(/msg\.modelNote/.test(chat),
+      'the badge tooltip must surface the scope note');
   });
 
   await Promise.all(pending);

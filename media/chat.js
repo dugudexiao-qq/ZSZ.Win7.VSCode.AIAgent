@@ -1261,6 +1261,9 @@
         keyState.title = keyPresent
           ? (modelName ? modelName + ' · ' : '') + msg.baseUrl + '（点击诊断连接）'
           : '还没有配置 API Key（点击设置；本地端点可留空）';
+        /* 用户改了一处设置、另一处 scope 还压着它时，光显示生效值会让人以为
+         * 「改了没用」。把谁在生效、谁没生效写进悬停提示。 */
+        if (msg.modelNote) { keyState.title += '｜' + msg.modelNote; }
         if (msg.author) {
           authorBtn.textContent = '© ' + msg.author + ' · MIT · v' + msg.version;
           authorBtn.title = '© 2026 ' + msg.author + ' · MIT License · 反馈：' + (msg.email || '') + ' · ' + msg.appName + ' · ' + msg.target;

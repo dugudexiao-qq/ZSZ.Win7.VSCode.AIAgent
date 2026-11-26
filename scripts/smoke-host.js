@@ -25,6 +25,8 @@ const events = [];
 const commands = {};
 let registeredProvider = null;
 let viewMessageHandler = null;
+/* 配置变更监听：设置页里改模型/地址后，面板徽章要靠它重推状态。 */
+let configChangeHandler = null;
 let firstSystemPrompt = '';
 let lastToolResult = '';
 let lastMessages = [];
@@ -188,7 +190,7 @@ const vscodeStub = {
     },
     asRelativePath: function (uri) { return uri.fsPath || 'app.js'; },
     onDidChangeWorkspaceFolders: function () { return disposable(); },
-    onDidChangeConfiguration: function () { return disposable(); },
+    onDidChangeConfiguration: function (cb) { configChangeHandler = cb; return disposable(); },
     findFiles: async function () { return [{ fsPath: 'C:/proj/app.js' }]; },
     // Backed by the real disk when the path exists, so readFile's size gate and
     // binary detection can be tested for real; falls back to the fake project
@@ -435,7 +437,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.12.3');
+  assert.strictEqual(info.version, '1.12.4');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -538,6 +540,45 @@ async function main() {
   assert.ok(/class="menu" hidden/.test(view.webview.html), 'dropdown menu must start collapsed');
   assert.ok(!/class="subhdr"/.test(view.webview.html), 'old two-row sub-header must be gone');
   assert.ok(viewMessageHandler, 'message handler must be attached');
+
+  /* 徽章上的模型名只在挂载/每轮结束时推。用户把 llama.cpp 换成新模型后，
+   * 面板一直挂着旧名字（请求其实已经用新配置）。设置变了必须重推状态。 */
+  {
+    const modelBefore = settings['win7Agent.model'];
+    await viewMessageHandler({ type: 'ready' });
+    await new Promise(function (r) { setTimeout(r, 30); });
+    const statesBefore = events.filter(function (m) { return m.type === 'state'; }).length;
+    settings['win7Agent.model'] = 'intranet-qwen-72b';
+    assert.ok(typeof configChangeHandler === 'function', 'activate must subscribe to configuration changes');
+    configChangeHandler({
+      affectsConfiguration: function (key) { return key === 'win7Agent'; }
+    });
+    await new Promise(function (r) { setTimeout(r, 50); });
+    const states = events.filter(function (m) { return m.type === 'state'; });
+    assert.ok(states.length > statesBefore, 'a settings change must push a fresh state to the panel');
+    assert.strictEqual(states[states.length - 1].model, 'intranet-qwen-72b',
+      'the badge must show the model that is actually configured, not the old llama.cpp');
+    settings['win7Agent.model'] = modelBefore;
+    console.log('  PASS  editing the model in settings repaints the panel badge');
+  }
+
+  /* 如果用户改的是「用户设置」，而工作区 settings.json 里还有旧值，生效的
+   * 仍然是工作区那份。徽章显示生效值没错，但必须说明另一处没生效，
+   * 否则用户只会觉得「改了半天还是 llama.cpp」。 */
+  {
+    scoped.global['win7Agent.model'] = 'llama.cpp';
+    scoped.workspace['win7Agent.model'] = 'qwen2.5-72b-instruct';
+    configChangeHandler({ affectsConfiguration: function (k) { return k === 'win7Agent'; } });
+    await new Promise(function (r) { setTimeout(r, 50); });
+    const states = events.filter(function (m) { return m.type === 'state'; });
+    const last = states[states.length - 1];
+    assert.strictEqual(last.model, 'qwen2.5-72b-instruct', 'the higher-priority scope must win');
+    assert.ok(/用户设置/.test(last.modelNote || ''),
+      'the tooltip must name the setting that did not take effect: ' + last.modelNote);
+    delete scoped.global['win7Agent.model'];
+    delete scoped.workspace['win7Agent.model'];
+    console.log('  PASS  a shadowed model setting is reported, not silently ignored');
+  }
   console.log('  PASS  webview has CSP, assets, compact header + dropdown menu, and all controls');
 
   /* ---- 会话：新开、切回，history 各自独立 ---- */
@@ -663,7 +704,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.12.3');
+  assert.strictEqual(state.version, '1.12.4');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');

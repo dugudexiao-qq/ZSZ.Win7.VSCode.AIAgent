@@ -1330,6 +1330,16 @@ function activate(context) {
         if (e.affectsConfiguration('win7Agent.updateRepo')) {
           Promise.resolve(context.globalState.update(UPDATE_LAST_KEY, 0)).catch(function () {});
         }
+        /* 面板徽章上的模型名/地址只在挂载和每轮结束时推一次。用户在设置里
+         * 把 llama.cpp 换成别的模型，没人通知面板，于是界面上一直挂着旧名字
+         * （实际请求用的已是新配置，只有显示是错的）。任何 win7Agent 设置
+         * 变化都重推一次状态，代价只是读一遍配置。 */
+        if (e.affectsConfiguration('win7Agent')) {
+          Promise.resolve(refresh()).catch(function (err) {
+            runtime.log('state refresh after settings change failed: ' +
+              (err && err.message ? err.message : err));
+          });
+        }
       })
     );
   }
