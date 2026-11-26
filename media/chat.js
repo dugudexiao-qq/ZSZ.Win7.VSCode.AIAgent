@@ -17,6 +17,9 @@
   var settingsBtn = document.getElementById('settings');
   var endpointBtn = document.getElementById('endpoint');
   var keyState = document.getElementById('keystate');
+  var memBar = document.getElementById('membar');
+  var memFill = document.getElementById('memfill');
+  var memText = document.getElementById('memtext');
   var authorBtn = document.getElementById('author');
   var rulesBtn = document.getElementById('rules');
   var lessonsBtn = document.getElementById('lessons');
@@ -218,6 +221,52 @@
    * Segoe UI Symbol 里它是黑白轮廓，字体被精简过的机器上还会变成豆腐块。
    * 「定时」两个字本身就说明了一切，不必赌字体。 */
   function scheduleBadge(ts) { return '定时 ' + clockLabel(ts); }
+
+  /* 顶端记忆容量条。percent = 会话历史字符数 / 上下文预算；满了以后更早的
+   * 消息就不再送进模型（自动压缩会先收成一条摘要）。这里只做显示，容量上限
+   * 由宿主按设置算好再发下来，前端不猜。 */
+  function fmtChars(n) {
+    n = Number(n) || 0;
+    if (n < 10000) { return String(n); }
+    var w = n / 10000;
+    return (w >= 10 ? Math.round(w) : Math.round(w * 10) / 10) + ' 万';
+  }
+
+  function applyMemory(mem) {
+    if (!memBar || !memFill || !memText || !mem || typeof mem !== 'object') { return; }
+    var pct = Number(mem.percent);
+    if (!isFinite(pct)) { pct = 0; }
+    pct = Math.max(0, Math.min(100, Math.round(pct)));
+    var used = Number(mem.used) || 0;
+    var limit = Number(mem.limit) || 0;
+    var msgs = Number(mem.messages) || 0;
+    var dropped = Number(mem.dropped) || 0;
+    memFill.style.width = pct + '%';
+    memBar.setAttribute('aria-valuenow', String(pct));
+    var full = dropped > 0 || pct >= 100;
+    var warn = !full && pct >= 80;
+    memBar.className = 'membar' + (full ? ' full' : (warn ? ' warn' : ''));
+
+    var label = '记忆 ' + pct + '%';
+    if (msgs === 0) { label = '记忆 0%（新对话）'; }
+    else if (full) { label = '记忆已满 ' + pct + '%'; }
+    else { label += ' · ' + fmtChars(used) + ' / ' + fmtChars(limit); }
+    memText.textContent = label;
+
+    var title = '上下文记忆：' + used + ' / ' + limit + ' 字符（' + pct + '%），共 ' + msgs +
+      ' 条消息；本轮会送入最近 ' + (Number(mem.includedMessages) || 0) + ' 条（' +
+      (Number(mem.included) || 0) + ' 字符）。';
+    if (dropped > 0) {
+      title += '更早的 ' + dropped + ' 条已不再参与——AI 会忘掉那部分内容。';
+    }
+    if (mem.summarized) {
+      title += '较早的对话已被自动压缩成一条摘要（【历史摘要】），细节以实际文件为准。';
+    }
+    if (pct >= 80 && !full) { title += '接近上限，必要时可清空对话或新开一条。'; }
+    title += '上限由设置 win7Agent.maxContextChars（' + limit + '）与 maxHistoryMessages（' +
+      (Number(mem.messageLimit) || 0) + '）决定。';
+    memBar.title = title;
+  }
 
   /* 定时任务的时间戳在历史里是毫秒数，显示成 02:00 就够。 */
   function clockLabel(ts) {
@@ -1257,6 +1306,7 @@
     if (!msg || !msg.type) { return; }
     switch (msg.type) {
       case 'state':
+        applyMemory(msg.memory);
         /* 徽章直接显示当前在用的模型名：比 "key ok" 有用——一眼知道这次
          * 请求会打到哪个模型。没配 Key 才退回提示文字。 */
         var modelName = String(msg.model || '').trim();
@@ -1338,6 +1388,9 @@
       case 'prefill':
         inputEl.value = msg.text || '';
         inputEl.focus();
+        break;
+      case 'memory':
+        applyMemory(msg.memory);
         break;
       case 'busy':
         if (msg.value) {

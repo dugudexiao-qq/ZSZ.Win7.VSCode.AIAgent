@@ -177,6 +177,43 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
  * Stop / Import / Save / 切换对话 不是一种长相，一行里两种外框很跳。 */
 #send, #stop, #schedbtn, #clear, #keybtn, #importbtn, #exportbtn { color: var(--vscode-foreground); background: transparent; border: 1px solid var(--vscode-panel-border, transparent); }
 
+/* 顶端记忆容量条。细节：只用主题变量，不写死颜色；条本身 4px，太粗会抢
+ * 对话区的空间。颜色只表达「还剩多少」：正常用进度条蓝，80% 起黄，满了红
+ * ——这条是风险提示，和顶部那几个开关「一律同色」的原则不冲突。 */
+.membar {
+  display: flex;
+  align-items: center;
+  column-gap: 6px;
+  padding: 4px 10px 5px 10px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+}
+.membar-track {
+  flex: 1 1 auto;
+  min-width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+}
+.membar-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--vscode-progressBar-background, #0e70c0);
+  transition: width 0.2s ease;
+}
+.membar-text {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+.membar.warn .membar-fill { background: var(--vscode-editorWarning-foreground, #cca700); }
+.membar.warn .membar-text { color: var(--vscode-editorWarning-foreground, #cca700); }
+.membar.full .membar-fill { background: var(--vscode-errorForeground, #f14c4c); }
+.membar.full .membar-text { color: var(--vscode-errorForeground, #f14c4c); }
+
 #messages {
   flex: 1;
   overflow-y: auto;

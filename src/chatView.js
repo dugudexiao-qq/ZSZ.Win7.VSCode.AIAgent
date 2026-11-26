@@ -4,7 +4,7 @@ const vscode = require('vscode');
 const fs = require('fs');
 const manifest = require('../package.json');
 const runtime = require('./runtime');
-const { runAgent } = require('./agent');
+const { runAgent, historyLimit, contextCharLimit, takeRecent } = require('./agent');
 const compact = require('./compact');
 const snapLib = require('./snapshots');
 const fileIndex = require('./fileIndex');
@@ -198,6 +198,8 @@ class ChatViewProvider {
   /* entry 给定时只发给那个视图：webview 的脚本还没跑起来时广播的 replay
    * 会丢（监听器尚未注册），ready 握手后再定向补一次才不会白屏。 */
   _replay(entry) {
+    /* 重放 = 换了会话，记忆条必须跟着换；顺手推一次比在每个调用点重复更省事。 */
+    this.postMemory();
     const items = this._replayItems();
     if (entry && entry.webview) {
       try { entry.webview.postMessage({ type: 'replay', items: items }); } catch (e) { /* 视图已销毁 */ }
@@ -336,6 +338,13 @@ class ChatViewProvider {
           '<button id="flagSubtask" class="flag" type="button" aria-pressed="false" title="子任务模式：关（点击允许把独立子任务交给子代理）">子任务：关</button>' +
         '</span>' +
       '</div>\n' +
+      /* 记忆容量条：历史里真正能送到模型的部分占预算多少。满了以后更早的
+       * 消息就不再参与（自动压缩会先把它们收成一条摘要），用户能提前看到
+       * 「AI 开始忘事了」，而不是等它答非所问才发现。 */
+      '<div id="membar" class="membar" role="progressbar" aria-label="上下文记忆占用" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
+        '<div class="membar-track"><div id="memfill" class="membar-fill"></div></div>' +
+        '<span id="memtext" class="membar-text">记忆 —</span>' +
+      '</div>\n' +
       '<div id="messages" aria-live="polite"></div>\n' +
       '<div class="statusbar"><span id="phaseDot" class="pdot"></span><span id="phaseText" class="ptext">就绪</span><span id="timer" class="timer"></span></div>\n' +
       '<div id="progress" class="progress" hidden><div class="bar"></div></div>\n' +
@@ -372,6 +381,42 @@ class ChatViewProvider {
     }
   }
 
+  /* 面板顶端的记忆容量条：当前会话历史有多少字符、预算多少、这一轮真正会
+   * 送进模型的有几条。上限与裁剪都复用它自己（agent.takeRecent），否则界面
+   * 说的容量会和实际送进去的内容对不上。 */
+  _memoryState() {
+    const config = runtime.getConfig();
+    const history = Array.isArray(this._history) ? this._history : [];
+    let used = 0;
+    let summarized = false;
+    for (let i = 0; i < history.length; i++) {
+      const m = history[i];
+      if (!m || typeof m.content !== 'string') { continue; }
+      used += m.content.length;
+      if (m.content.indexOf(compact.SUMMARY_MARKER) === 0) { summarized = true; }
+    }
+    const limit = contextCharLimit(config);
+    const msgLimit = historyLimit(config);
+    const recent = takeRecent(history, msgLimit, limit);
+    const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+    return {
+      used: used,
+      limit: limit,
+      percent: percent,
+      included: recent.chars,
+      includedMessages: recent.messages.length,
+      messages: history.length,
+      messageLimit: msgLimit,
+      dropped: recent.dropped,
+      summarized: summarized
+    };
+  }
+
+  /* 每次 push 历史后只推这一条，不必整套 postState（那要读 Key、拼会话列表）。 */
+  postMemory() {
+    this._post({ type: 'memory', memory: this._memoryState() }, false);
+  }
+
   async postState() {
     const key = await runtime.getApiKey();
     const config = runtime.getConfig();
@@ -380,6 +425,7 @@ class ChatViewProvider {
     this._post({
       type: 'state',
       hasKey: Boolean(key),
+      memory: this._memoryState(),
       localEndpoint: config.localEndpoint,
       model: config.model,
       modelNote: runtime.getModelScopeNote(),
@@ -517,6 +563,7 @@ class ChatViewProvider {
     /* 清空对话 = 放弃这条线索，上一轮的失败不该再被下一次成功「顺手」记录。 */
     delete this._fixMaps[String(this._activeId)];
     this._post({ type: 'cleared' }, false);
+    this.postMemory();
     this._publishSessions();
     this._saveSessions();
   }
@@ -748,6 +795,8 @@ class ChatViewProvider {
     if (scheduledAt) { userTurn.scheduled = scheduledAt; }
     this._history.push(userTurn);
     this._touchSessionTitle(text);
+    /* 用户这一条已经进历史了，记忆条立刻反映（不必等整轮结束）。 */
+    this.postMemory();
     /* 引入的文件已经在历史里，标签到此为止（「回答结束后还留在输入框」）。 */
     this._consumeAttachments();
 
@@ -764,6 +813,9 @@ class ChatViewProvider {
         });
         if (report && report.ok) {
           this._saveSessions();
+          /* 压缩把旧消息换成了摘要，占用会掉下来——让记忆条当场回落，
+           * 用户能看见「空间被腾出来了」，而不是等下一轮才变。 */
+          this.postMemory();
           this._post({ type: 'notice', text: '历史较长，已自动压缩：' + report.dropped +
             ' 条旧消息 → 摘要 ' + report.summaryChars + ' 字（保留最近 ' + report.kept + ' 条）' }, false);
         } else if (report && report.error) {

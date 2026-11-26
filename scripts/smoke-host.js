@@ -437,7 +437,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.12.6');
+  assert.strictEqual(info.version, '1.12.7');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -494,6 +494,10 @@ async function main() {
     assert.ok(view.webview.html.indexOf(id) !== -1, 'webview must contain ' + id);
   });
   const rowHtml = (view.webview.html.match(/<div class="row">([\s\S]*?)<\/div>/) || [])[1] || '';
+  /* 记忆容量条必须在对话顶端（hdr 之后、messages 之前），常驻可见；
+   * 藏进菜单或放在滚动区里都看不见。 */
+  assert.ok(/id="membar"[\s\S]*id="memfill"[\s\S]*id="messages"/.test(view.webview.html),
+    'the memory bar must sit between the header and the transcript');
   assert.ok(rowHtml.indexOf('id="keybtn"') === -1, 'Set key must not sit among the composer buttons any more');
   assert.ok(rowHtml.indexOf('id="newchat"') === -1,
     'the separate new-chat button must be gone (new chat lives at the top of the session list)');
@@ -729,10 +733,20 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.12.6');
+  assert.strictEqual(state.version, '1.12.7');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
+  /* 记忆容量条的数据：字符占用 / 预算，且百分比必须由宿主算，前端只显示。
+   * 用 agent 自己的裁剪结果作为「实际送入」，否则界面和真实上下文对不上。 */
+  const mem = state.memory;
+  assert.ok(mem && typeof mem === 'object', 'state must carry the context memory budget');
+  assert.ok(mem.limit >= 2000, 'the budget must come from win7Agent.maxContextChars');
+  assert.ok(mem.used > 0 && mem.messages > 0, 'a run has already happened, so memory must be in use');
+  assert.strictEqual(mem.percent, Math.min(100, Math.round((mem.used / mem.limit) * 100)),
+    'percent must be used/limit, not a free-form number');
+  assert.ok(mem.included <= mem.used && mem.includedMessages <= mem.messages,
+    'the included part can never exceed the whole history');
   console.log('  PASS  webview state exposes author, app name, 1000 s timeout and rule count');
 
   events.length = 0;
@@ -753,6 +767,8 @@ async function main() {
   assert.ok(!/工作区外路径、绝对路径越界、二进制文件、超过 200 KB 的文件一律拒绝/.test(firstSystemPrompt),
     'the old blanket "all out-of-workspace paths rejected" wording must be gone');
   const phases = events.filter(function (e) { return e.type === 'phase'; });
+  assert.ok(events.some(function (e) { return e.type === 'memory'; }),
+    'a new user turn must refresh the memory bar right away, not only when the run ends');
   assert.ok(phases.length >= 2, 'the UI must receive visible phase updates');
   assert.ok(events.some(function (e) { return e.type === 'busy' && e.value === true; }), 'busy start must be emitted');
   assert.ok(events.some(function (e) { return e.type === 'busy' && e.value === false; }), 'busy end must be emitted');

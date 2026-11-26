@@ -481,6 +481,42 @@ check('the Send button keeps its name while a reply is running', function () {
   assert.strictEqual(els.send.textContent, 'Send');
 });
 
+/* ---- v1.12.7 顶端记忆容量条 ---- */
+
+check('the memory bar shows how much of the context budget is used', function () {
+  hostMessage({
+    type: 'memory',
+    memory: {
+      used: 120000, limit: 280000, percent: 43,
+      included: 110000, includedMessages: 9, messages: 12,
+      messageLimit: 100, dropped: 0, summarized: false
+    }
+  });
+  assert.strictEqual(els.memfill.style.width, '43%',
+    'the fill must track used/limit, otherwise the bar is decoration');
+  assert.ok(/记忆/.test(els.memtext.textContent) && /43%/.test(els.memtext.textContent),
+    'the label must state the percentage: ' + els.memtext.textContent);
+  assert.ok(/12 万/.test(els.memtext.textContent), 'and the raw size, so 43% is checkable');
+  assert.ok(!/warn|full/.test(els.membar.className), 'mid-range usage must stay neutral');
+  assert.ok(/maxContextChars/.test(els.membar.title), 'the tooltip must name the setting that sets the cap');
+
+  /* 80% 起提醒：AI 快开始忘掉开头了。 */
+  hostMessage({ type: 'memory', memory: { used: 240000, limit: 280000, percent: 86, messages: 40, dropped: 0, messageLimit: 100 } });
+  assert.ok(/warn/.test(els.membar.className), 'past 80% the bar must warn');
+  assert.strictEqual(els.memfill.style.width, '86%');
+
+  /* 一旦开始丢旧消息就是「已满」：准确说不是 100%，而是 AI 已经开始忘事。 */
+  hostMessage({ type: 'memory', memory: { used: 300000, limit: 280000, percent: 100, messages: 130, dropped: 12, messageLimit: 100 } });
+  assert.ok(/full/.test(els.membar.className), 'dropped turns must be flagged, not hidden behind 100%');
+  assert.ok(/记忆已满/.test(els.memtext.textContent), 'the label must say it in words: ' + els.memtext.textContent);
+  assert.ok(/更早的 12 条/.test(els.membar.title), 'the tooltip must say how many turns no longer reach the model');
+
+  /* 空对话不该显示成「快满了」。 */
+  hostMessage({ type: 'memory', memory: { used: 0, limit: 280000, percent: 0, messages: 0, dropped: 0 } });
+  assert.strictEqual(els.memfill.style.width, '0%');
+  assert.ok(/新对话/.test(els.memtext.textContent));
+});
+
 /* ---- v1.12.0 定时任务：发送行入口 + 定时气泡角标 ---- */
 
 check('the composer hands the typed task to the scheduler, and refuses an empty box', function () {
