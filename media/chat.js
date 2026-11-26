@@ -291,6 +291,8 @@
           rec.note + '）。';
       } else {
         memRec.hidden = true;
+        memBar.title = title + '模型名未识别（win7Agent.model 为空或不在已知族系里），' +
+          '无法按模型推荐预算，请按模型说明手动设置 maxContextChars。';
       }
     }
   }

@@ -560,6 +560,8 @@ check('the memory bar offers the budget the current model needs', function () {
   /* 模型名认不出来：不给数字，免得把人带进坑。 */
   hostMessage({ type: 'memory', memory: { used: 100, limit: 8000, percent: 1, messages: 1, dropped: 0, messageLimit: 100, rec: null } });
   assert.strictEqual(els.memrec.hidden, true, 'an unrecognised model must not get an invented number');
+  assert.ok(/无法按模型推荐预算/.test(els.membar.title),
+    'and the tooltip must say why there is no recommendation: ' + els.membar.title);
 });
 
 /* ---- v1.12.0 定时任务：发送行入口 + 定时气泡角标 ---- */
