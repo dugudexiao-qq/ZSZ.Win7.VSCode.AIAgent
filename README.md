@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.12.1-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.12.2-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -46,9 +46,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.12.1** 的附件 `zsz-win7-vscode-aiagent-1.12.1.vsix`（约 190 KB）
-   （直链：[Releases/download/v1.12.1](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.12.1/zsz-win7-vscode-aiagent-1.12.1.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.12.1.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.12.2** 的附件 `zsz-win7-vscode-aiagent-1.12.2.vsix`（约 190 KB）
+   （直链：[Releases/download/v1.12.2](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.12.2/zsz-win7-vscode-aiagent-1.12.2.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.12.2.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
@@ -129,6 +129,7 @@
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.12.2**：一次全量代码审计（漏洞 + 冗余）。修的真实缺陷：① **命令白名单只比前缀**——`allowedShellCommands: ["git"]` 时 `git status; del /s /q C://*` 也被放行，现在按 `;` `&&` `||` `|` 换行切开，每段都要命中白名单且前缀后必须是命令边界（`dirx` 不再冒充 `dir`）。② **连点发送启动两轮**：`_busy` 原来在两个 `await` 之后才置位，面板和边栏同时发（或手快连点）会有两轮 runAgent 并行、共用同一个取消令牌，现在先占位再 await。③ 正在回复时「清空对话」会把这一轮的回复写回空白会话，现在与切换/删除一致，先提示再拒绝。④ `maxToolRounds: 0` 文档写「完全禁用工具」，实际被 `|| 20` 吃成 20，现在真的禁用。⑤ 索引/解析两处卡死风险：`{` 泛滥的模型输出让括号扫描退化成 O(n²)（已加扫描预算），命令输出跨 chunk 的中文被切成乱码（改用 StringDecoder）。⑥ 小修：文件正文里写着 `STATUS: FAILED` 不再被当成本轮命令失败；`deniedTools` 大小写不敏感；撤回快照的路径校验从字符串前缀改为 `path.relative`（`app-evil` 不再被当成 `app`）；settings.json 带 BOM 时设置体检不再「假干净」；`stripJsonc` 不再改动字符串里的 `, }`；只输入 6 位数字不再被当成主机名；会话持久化从「只留 40 条」放宽到 200 条 / 40 万字符，长任务重开窗口不再丢任务前提。清理：删掉开发期残留的 23 张 `scripts/_preview` 截图、两个一次性图标脚本、`ui-preview.html`、`icon-preview.png` 和 4 个未使用的图标变体；仓库里只保留最新一版 `dist/` 安装包（旧版走 Releases）。
 - **v1.12.1**：修两个「队列停住」和「定时任务白跑」的问题。① 队列的「已暂停」状态会一直粘着：某次 401 / Stop / 弹窗超时把队列标成暂停后，后面每一轮**成功了也不再往下发**，排队的第二条永远停在「待发送」，得手动点「继续队列」——现在任何一轮成功都会清掉暂停标记并立刻发下一条（宿主在缺 Key 的提前返回路径上也补发 `done`，不再让面板以为有任务在飞）。② 定时任务夜里没人守着，写入/命令/工具审批弹窗等满 120 秒被当成拒绝，整条任务白跑——现在定时任务那一轮按推荐选项自动确认，并在对话里留下「[无人值守] 已按推荐自动确认：…」的记录；新增设置 `win7Agent.scheduledUnattended`（默认开）可关掉。
 - **v1.12.0**：新增**定时任务**。内网算力白天紧张，可以把跑批排到夜里：输入框写好任务 → 菜单「定时发送…」→ 选 30 分钟后 / 凌晨 02:00 / 自定义 `HH:MM`，并可选「每天这个时间」或「只跑一次」。到点由扩展宿主自己发起一整轮（历史里那条消息带 `⏰ 02:00 定时` 角标），正在回复时排队等这一轮结束；`Ctrl+Shift+P` →「定时任务：管理」可立即执行、暂停、删除。任务存 globalState，重载不丢；计时器只有一个，分段重排以抵抗系统休眠/改时钟。限制写进 README：VS Code 关着不会执行，错过的直接跳过（不补跑）。
 - **v1.11.18**：修「任务超时后排队消息卡住」。以前任何一轮出错都会把暂存队列置为「已暂停」，得手动点「继续队列」；可超时（模型服务慢、GGUF 刚加载、内网抖动）跟队列里下一条任务没关系，下一条往往很短就能跑通。现在宿主把失败分类随错误一起发给面板（`src/failure.js`）：超时 → 队列继续，并在对话里留一行「上一轮请求超时，队列继续发送剩余 N 条」；连续 2 条超时才暂停（多半是服务真的挂了），认证失败 / 地址写错 / 弹窗没人点 / 手动 Stop 仍然暂停。一键「继续队列」会重置这个计数。

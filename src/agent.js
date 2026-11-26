@@ -61,6 +61,17 @@ function confirmTimeoutMs(config) {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_CONFIRM_TIMEOUT_MS;
 }
 
+const DEFAULT_MAX_TOOL_ROUNDS = 20;
+
+/* win7Agent.maxToolRounds=0 的文档语义是「完全禁用工具」，但旧写法
+ * `Number(x) || 20` 会把 0 变成 20，设置等于没生效。这里显式保留 0，
+ * 并把非法值（NaN / 负数 / 超大）收敛回可用范围。 */
+function toolRoundBudget(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) { return DEFAULT_MAX_TOOL_ROUNDS; }
+  return Math.max(0, Math.min(1000, Math.floor(n)));
+}
+
 /* Race a VS Code modal dialog against a deadline.
  *
  * showWarningMessage() resolves ONLY when a human clicks a button. If the
@@ -146,7 +157,11 @@ function emitAutoApprove(sink, text) {
 function canWrite(config) {
   const c = config && config.constraints;
   if (!c) { return false; }
-  return c.readOnly === false && (c.deniedTools || []).indexOf('insertText') === -1;
+  if (c.readOnly !== false) { return false; }
+  /* 与 rules.checkToolCall 保持同一套大小写规则，否则两个开关会互相矛盾。 */
+  return !(c.deniedTools || []).some(function (t) {
+    return String(t).toLowerCase() === 'inserttext';
+  });
 }
 
 function isSubtaskMode(config) {
@@ -240,12 +255,16 @@ function lastUserText(history) {
 
 /* Map a tool result string back to ok / failed / blocked. runTool() turns
  * exceptions into "TOOL ERROR: ..." and the gates into "TOOL BLOCKED: ...",
- * so the prefix is a reliable signal. Command failures carry a STATUS line. */
+ * so the prefix is a reliable signal. Command failures carry a STATUS line.
+ * The STATUS check is anchored on the "| exit=NN" tail that runCommandTool
+ * always appends: a file read whose text happens to contain "STATUS: FAILED"
+ * must not be reported as a failed command (and must not poison the learned
+ * lessons / the完成自检 verdict). */
 function toolStatusOf(result) {
   const text = String(result || '');
   if (text.indexOf('TOOL BLOCKED') === 0) { return 'blocked'; }
   if (text.indexOf('TOOL ERROR') === 0) { return 'failed'; }
-  if (/^STATUS: (FAILED|TIMEOUT|STALLED|CANCELLED)/m.test(text)) { return 'failed'; }
+  if (/STATUS: (?:FAILED|TIMEOUT|STALLED|CANCELLED)[^|\n]*\| exit=/.test(text)) { return 'failed'; }
   if (text.indexOf('子任务执行失败') !== -1) { return 'failed'; }
   return 'ok';
 }
@@ -495,6 +514,21 @@ async function createFileTool(args, config, ctx) {
 
 // 空白名单 = 放行任意命令；非空时按前缀（不区分大小写）匹配。
 // 只填了空串（例如误配 [""]）按「什么都不放行」处理，绝不等于放行全部。
+/* 白名单是「只能跑这些程序」，不是「命令以这些字符开头」。
+ * 旧实现只比较整条命令的前缀，于是「git status; del /s /q C:\*」因为以
+ * git 开头而被放行——分号/&&/管道把白名单变成了摆设。
+ * 现在按命令分隔符切开，每一段都必须以某个白名单项开头，且前缀后面必须是
+ * 命令边界（空格、引号或结尾），避免 "git" 放行 "gitx"。
+ * 重定向（> < 2>&1）不切分：它是 shell 固有语法，切开会误拒 2>&1 这类常见
+ * 写法；`.bat` 里的 cmd /c 仍然能拆出子命令，白名单挡不住——这层只是降低
+ * 误用，真正的兜底是「命令确认」弹窗。 */
+function splitShellSegments(command) {
+  return String(command === undefined || command === null ? '' : command)
+    .split(/&&|\|\||[;|&\n\r`]|\$\(/)
+    .map(function (part) { return part.trim().replace(/^["']+/, ''); })
+    .filter(function (part) { return part.length > 0; });
+}
+
 function isShellCommandAllowed(command, whitelist) {
   const raw = Array.isArray(whitelist) ? whitelist : [];
   if (!raw.length) { return true; }
@@ -502,9 +536,15 @@ function isShellCommandAllowed(command, whitelist) {
     .filter(function (item) { return item.length > 0; })
     .map(function (item) { return item.toLowerCase(); });
   if (!list.length) { return false; }
-  const lowered = String(command || '').trim().toLowerCase();
-  return list.some(function (prefix) {
-    return lowered.indexOf(prefix) === 0;
+  const segments = splitShellSegments(command);
+  if (!segments.length) { return false; }
+  return segments.every(function (segment) {
+    const lowered = segment.toLowerCase();
+    return list.some(function (prefix) {
+      if (lowered.indexOf(prefix) !== 0) { return false; }
+      const next = lowered.charAt(prefix.length);
+      return next === '' || next === ' ' || next === '\t' || next === '"' || next === "'";
+    });
   });
 }
 
@@ -604,7 +644,7 @@ async function runSubtaskTool(args, config, ctx) {
 
   const subConfig = Object.assign({}, config, {
     stream: false,
-    maxToolRounds: Math.min(Number(config.maxToolRounds) || 20, 8)
+    maxToolRounds: Math.min(toolRoundBudget(config.maxToolRounds), 8)
   });
   const history = [{
     role: 'user',
@@ -849,6 +889,10 @@ async function runAgent(params) {
   const unattended = params.unattended === true;
   const runSeq = ++RUN_SEQ;
   prunePendingFixes(pendingFixes, runSeq);
+  /* 工具轮数预算：0 = 只回答、完全不执行工具（见设置项说明）。 */
+  const maxRounds = toolRoundBudget(config.maxToolRounds);
+  /* 0 时仍给模型一次机会把话说清楚：第一轮的工具调用被拒，第二轮回答。 */
+  const loopRounds = maxRounds === 0 ? 1 : maxRounds;
   const startedAt = Date.now();
   let producedChars = 0;
 
@@ -923,7 +967,7 @@ async function runAgent(params) {
   let planRound = -1;
   let planNudged = false;
   try {
-    for (let round = 0; round <= config.maxToolRounds; round++) {
+    for (let round = 0; round <= loopRounds; round++) {
       trace.rounds = round + 1;
       if (token && token.isCancellationRequested) {
         trace.cancelled = true;
@@ -970,7 +1014,7 @@ async function runAgent(params) {
          * as chat text; after two attempts, show the prose with fragments
          * stripped. */
         const brokenTemplate = hasBrokenToolTemplate(content);
-        if (brokenTemplate && formatRetries < BROKEN_TEMPLATE_RETRIES && round < config.maxToolRounds) {
+        if (brokenTemplate && formatRetries < BROKEN_TEMPLATE_RETRIES && round < loopRounds) {
           formatRetries += 1;
           phase('调用模板不完整，已要求模型重发');
           emit({ type: 'notice', text: '模型输出的调用模板不完整（无法识别工具名），已自动要求重发，原文不显示' });
@@ -992,7 +1036,7 @@ async function runAgent(params) {
          * the run here looks like a silent success ("已完成" with nothing in
          * the transcript) — nudge it back to work instead. */
         if (!String(shown || '').trim()) {
-          if (autoRetries < AUTO_RETRY_MAX && round < config.maxToolRounds) {
+          if (autoRetries < AUTO_RETRY_MAX && round < loopRounds) {
             autoRetries += 1;
             phase('本轮没有正文，已要求模型继续');
             emit({ type: 'notice', text: '模型本轮只有思考过程，没有正文也没有工具调用，已自动要求继续' });
@@ -1038,7 +1082,7 @@ async function runAgent(params) {
          * 只提醒一次，也不在子代理里触发。 */
         if (depth === 0 && !planNudged && isSubtaskMode(config) &&
             planItems >= 2 && taskState.subtasks > 0 && taskState.subtasks < planItems &&
-            round < config.maxToolRounds &&
+            round < loopRounds &&
             /* 只在模型「宣布收尾」时才提醒：它若正在描述下一步动作，别打断。 */
             /完成|汇总|搞定|finished|done/i.test(shown)) {
           planNudged = true;
@@ -1086,6 +1130,11 @@ async function runAgent(params) {
         phase('已拦截：' + verdict.reason);
         result = 'TOOL BLOCKED BY CONSTRAINT: ' + verdict.reason +
           '\nDo NOT retry this tool. Answer using the information you already have.';
+      } else if (maxRounds === 0) {
+        /* maxToolRounds=0 = 完全禁用工具。以前 0 被当成 20，设置形同虚设。 */
+        phase('工具轮数预算为 0，拒绝执行');
+        result = 'TOOL BLOCKED: 工具调用已被禁用（win7Agent.maxToolRounds = 0）。' +
+          '不要重试任何工具，直接用已有信息回答。';
       } else if (config.constraints.requireToolApproval && unattended) {
         /* 定时任务：按推荐（允许）直接执行，不再等一个没人看的弹窗。 */
         emitAutoApprove(emit, '调用工具 ' + call.tool);
@@ -1212,5 +1261,8 @@ module.exports = {
   takePendingFixes,
   prunePendingFixes,
   MAX_PENDING_PER_TOOL,
-  PENDING_FIX_TTL_RUNS
+  PENDING_FIX_TTL_RUNS,
+  /* 纯函数，给离线审计用：工具结果定级 / 轮数预算 */
+  toolStatusOf,
+  toolRoundBudget
 };

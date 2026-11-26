@@ -35,7 +35,9 @@ function normalizeEndpoint(input, current) {
   let candidate = raw;
   const notes = [];
 
-  if (/^\d{1,5}$/.test(raw)) {
+  /* 纯数字一律当端口。旧写法只认 1-5 位，输入 6 位端口（如 114514）会掉进
+   * 下面的分支变成主机名 http://114514，看起来还「成功」了——比报错更糟。 */
+  if (/^\d+$/.test(raw)) {
     const port = Number(raw);
     if (port < 1 || port > 65535) { return { ok: false, error: '端口必须是 1-65535 的整数' }; }
     const base = parseCurrent(current);

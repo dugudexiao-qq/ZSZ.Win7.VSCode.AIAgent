@@ -73,16 +73,30 @@ function stripJsonc(text) {
       i += 2;
       continue;
     }
+    if (ch === ',') {
+      /* 尾逗号在字符串之外才删。原来是在整段文本上跑 /,\s*([}\]])/，
+       * 会把 "note": "a, }" 这种字符串内容也改掉，JSON 依旧合法但值变了。 */
+      let k = i + 1;
+      while (k < text.length && /\s/.test(text[k])) { k += 1; }
+      if (k < text.length && (text[k] === '}' || text[k] === ']')) {
+        i += 1;
+        continue;
+      }
+    }
     out += ch;
     i += 1;
   }
-  return out.replace(/,\s*([}\]])/g, '$1');
+  return out;
 }
 
 function readSettings(file) {
   try {
     if (!fs.existsSync(file)) { return null; }
-    return JSON.parse(stripJsonc(fs.readFileSync(file, 'utf8')));
+    /* 记事本另存的 settings.json 常带 BOM，JSON.parse 会直接抛错——旧代码
+     * 把它当成「没有设置」，体检于是报「很干净」，实际上一项都没检查。 */
+    const text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+    if (!text.trim()) { return {}; }
+    return JSON.parse(stripJsonc(text));
   } catch (e) {
     return null;
   }

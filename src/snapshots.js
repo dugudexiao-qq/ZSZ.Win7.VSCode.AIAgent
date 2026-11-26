@@ -57,10 +57,16 @@ function revert(root, records) {
     const rel = String(rec.rel || '');
     const full = path.resolve(root, rel);
     /* Path sanity: never touch anything outside the workspace root, even if a
-     * record was tampered with. */
-    if (root && path.resolve(full).indexOf(path.resolve(root)) !== 0) {
-      results.push({ rel: rel, ok: false, reason: '路径不在工作区内，已跳过' });
-      continue;
+     * record was tampered with. 用 path.relative 而不是 indexOf 前缀比较：
+     * 「C:\work\app」是「C:\work\app-evil\x」的字符串前缀，前缀判断会把
+     * 工作区外的同级目录也当成工作区内。 */
+    if (root) {
+      const relToRoot = path.relative(path.resolve(root), path.resolve(full));
+      if (path.isAbsolute(relToRoot) || relToRoot === '..' ||
+          relToRoot.indexOf('..' + path.sep) === 0) {
+        results.push({ rel: rel, ok: false, reason: '路径不在工作区内，已跳过' });
+        continue;
+      }
     }
     try {
       if (!rec.existed) {

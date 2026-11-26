@@ -232,6 +232,11 @@ function runCommand(params) {
     wallTimer = setTimeout(function () { terminate('wall'); }, limits.timeoutMs);
     resetIdle();
 
+    /* setEncoding 让 Node 用 StringDecoder 拼接跨 chunk 的多字节字符。
+     * 直接 String(chunk) 会按 chunk 边界解码，一个中文字被切开就变成两个
+     * U+FFFD（「命令输出里莫名出现问号」就是这么来的）。 */
+    if (child.stdout) { child.stdout.setEncoding('utf8'); }
+    if (child.stderr) { child.stderr.setEncoding('utf8'); }
     if (child.stdout) { child.stdout.on('data', function (c) { append('out', c); }); }
     if (child.stderr) { child.stderr.on('data', function (c) { append('err', c); }); }
     child.on('error', function (e) { done({ ok: false, error: e.message }); });

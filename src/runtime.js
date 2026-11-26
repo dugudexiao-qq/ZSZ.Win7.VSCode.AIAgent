@@ -264,11 +264,29 @@ async function clearLessons() {
 /* ---- conversation sessions (persisted in globalState) ----
  * 一个会话就是一份发给模型的 history。切换会话只换 history 的引用，
  * 屏幕上的旧消息由 webview 自己保存快照，这里不存 DOM。
- * 上限：8 个会话 / 每个会话 40 条消息，防止 globalState 无限增长。 */
+ * 上限：8 个会话 / 每个会话 200 条消息且总字符数 40 万，防止 globalState
+ * 无限增长。旧的 40 条硬上限会在一轮长任务里就把开头的需求描述和自动压缩
+ * 生成的摘要挤掉——重开窗口后模型看不到任务前提，只能瞎猜。 */
 
 const SESSIONS_KEY = 'win7Agent.sessions';
 const MAX_SESSIONS = 8;
-const MAX_SESSION_MESSAGES = 40;
+const MAX_SESSION_MESSAGES = 200;
+const MAX_SESSION_CHARS = 400000;
+
+/* 从最后一条往前收，条数与字符数两道闸都满足才停。 */
+function trimHistory(list) {
+  const kept = [];
+  let chars = 0;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const m = list[i];
+    if (kept.length >= MAX_SESSION_MESSAGES) { break; }
+    const size = String(m.content || '').length;
+    if (kept.length && chars + size > MAX_SESSION_CHARS) { break; }
+    chars += size;
+    kept.unshift(m);
+  }
+  return kept;
+}
 
 function normalizeSessions(raw) {
   const src = raw && typeof raw === 'object' ? raw : {};
@@ -276,9 +294,9 @@ function normalizeSessions(raw) {
   const items = [];
   list.forEach(function (s) {
     if (!s || typeof s !== 'object' || !s.id) { return; }
-    const history = Array.isArray(s.history) ? s.history.filter(function (m) {
+    const history = Array.isArray(s.history) ? trimHistory(s.history.filter(function (m) {
       return m && typeof m === 'object' && typeof m.role === 'string' && typeof m.content === 'string';
-    }).slice(-MAX_SESSION_MESSAGES) : [];
+    })) : [];
     const title = String(s.title || '').slice(0, 40);
     items.push({
       id: String(s.id),
@@ -586,6 +604,7 @@ module.exports = {
   normalizeSessions,
   MAX_SESSIONS,
   MAX_SESSION_MESSAGES,
+  MAX_SESSION_CHARS,
   getRuleSummary,
   getEffectivePrompt,
   getApiKey,

@@ -201,7 +201,21 @@ function main() {
   console.log('  files: ' + entries.length + ' (extension/: ' + files.length + ')');
   console.log('  size : ' + (buf.length / 1024).toFixed(2) + ' KB');
   files.forEach(function (f) { console.log('    ' + f.name + '  ' + f.data.length); });
+  remindDist(outName);
   return outFile;
+}
+
+/* dist/ 里只留最新一版给 GitCode 镜像页下载（.gitignore 用具体文件名白名单），
+ * 忘了改就会「本地有包、仓库里还是上一版」，国内用户下到的永远是旧版。 */
+function remindDist(outName) {
+  const ignoreFile = path.join(root, '.gitignore');
+  try {
+    const text = fs.readFileSync(ignoreFile, 'utf8');
+    if (text.indexOf('!dist/' + outName) === -1) {
+      console.log('  NOTE: .gitignore still whitelists the previous dist file.');
+      console.log('        cp ' + outName + ' dist/ && update the "!dist/..." line');
+    }
+  } catch (e) { /* 没有 .gitignore 就没什么可提醒的 */ }
 }
 
 if (require.main === module) { main(); }

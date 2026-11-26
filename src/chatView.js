@@ -494,6 +494,13 @@ class ChatViewProvider {
   getLastAnswer() { return this._lastAnswer; }
 
   clearHistory() {
+    /* 正在回复时清空：runAgent 手里握着同一个 history 数组，清完它还会把
+     * 这一轮的回复 push 进「新对话」，看起来像清空没生效。和切换/删除会话
+     * 一致，先让这一轮结束（或点 Stop）。 */
+    if (this._busy) {
+      this._post({ type: 'notice', text: '正在回复，等这一轮结束（或点 Stop）再清空对话。' }, false);
+      return;
+    }
     const s = this._findSession(this._activeId);
     if (s) { s.history.length = 0; s.title = '新对话'; s.updatedAt = Date.now(); }
     this._history = s ? s.history : [];
@@ -681,9 +688,31 @@ class ChatViewProvider {
       this._postTo(entry, { type: 'queueRejected', text: text });
       return;
     }
-    const config = runtime.getConfig();
-    const apiKey = await runtime.getApiKey();
+    /* 先占住 busy，再 await：runtime.getApiKey() 是异步的，旧写法把
+     * `_busy = true` 放在两个 await 之后，连点两下发送（或面板 + 边栏同时发）
+     * 两边都能通过 busy 检查，最后两轮 runAgent 并行跑、共用同一个 _cts——
+     * Stop 只停掉后一轮，前一轮继续写历史，会话就乱了。 */
+    this._busy = true;
+    this._cts = new vscode.CancellationTokenSource();
+    const releaseSlot = () => {
+      if (this._cts) { this._cts.dispose(); }
+      this._cts = null;
+      this._busy = false;
+    };
+    let config;
+    let apiKey;
+    try {
+      config = runtime.getConfig();
+      apiKey = await runtime.getApiKey();
+    } catch (err) {
+      releaseSlot();
+      this._post({ type: 'error', text: '读取 API Key 失败：' +
+        (err && err.message ? err.message : String(err)) }, false);
+      this._post({ type: 'done' }, false);
+      return;
+    }
     if (!apiKey && !config.localEndpoint) {
+      releaseSlot();
       this._post({ type: 'error', text: 'This endpoint needs an API key. Click "Set key" first.' }, false);
       /* 也要给一个 done：否则面板会一直以为有任务在飞，排队的下一条永远不发。 */
       this._post({ type: 'done' }, false);
@@ -702,8 +731,6 @@ class ChatViewProvider {
         ' 的定时任务开始执行' + (unattended ? '（无人值守：需要确认的写入/命令按推荐自动执行）' : '') }, false);
     }
 
-    this._busy = true;
-    this._cts = new vscode.CancellationTokenSource();
     const userTurn = { role: 'user', content: text };
     if (scheduledAt) { userTurn.scheduled = scheduledAt; }
     this._history.push(userTurn);

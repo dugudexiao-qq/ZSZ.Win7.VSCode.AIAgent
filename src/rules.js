@@ -148,7 +148,8 @@ function compileSystemPrompt(params) {
   // this module stays free of child_process.
   const shellSection = String(p.shellSection || '').trim();
   if (shellSection) { sections.push(shellSection); }
-  const constraintLines = describeConstraints(p.constraints);  if (constraintLines.length) {
+  const constraintLines = describeConstraints(p.constraints);
+  if (constraintLines.length) {
     sections.push(
       '## 运行约束（由扩展在工具执行层强制拦截，不要尝试绕过；被拒绝时改用已有信息回答）\n' +
       constraintLines.map(function (line) { return '- ' + line; }).join('\n')
@@ -218,7 +219,10 @@ function checkToolCall(call, rawConstraints) {
   const tool = String(call && call.tool || '');
   const args = call && call.args && typeof call.args === 'object' ? call.args : {};
   if (!tool) { return { allowed: false, reason: '空的工具名' }; }
-  if (c.deniedTools.indexOf(tool) !== -1) {
+  /* 工具名大小写不敏感：settings.json 里写成 InsertText 也能拦住，
+   * 否则黑名单只差一个字母就失效。 */
+  const lowered = tool.toLowerCase();
+  if (c.deniedTools.some(function (t) { return String(t).toLowerCase() === lowered; })) {
     return { allowed: false, reason: '工具 ' + tool + ' 已在 win7Agent.constraints.deniedTools 中被禁用' };
   }
   if (tool === 'runSubtask' && c.subtaskMode === false) {

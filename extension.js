@@ -220,7 +220,12 @@ function activate(context) {
 
     firing.forEach(function (job) {
       runtime.log('scheduled job fired: ' + job.id + ' (' + schedulerLib.fmtClock(job.at) + ')');
-      provider.runScheduled(job.text, { at: job.at });
+      /* runScheduled 内部已经把失败转成 error 事件，但仍要接住 Promise：
+       * 未处理的 rejection 在 Node 16 会直接打印堆栈甚至终止扩展宿主。 */
+      Promise.resolve(provider.runScheduled(job.text, { at: job.at })).catch(function (e) {
+        runtime.log('scheduled job failed to start: ' + job.id + ' ' +
+          (e && e.message ? e.message : e));
+      });
     });
 
     armSchedules();

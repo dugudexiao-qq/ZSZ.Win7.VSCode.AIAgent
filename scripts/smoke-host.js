@@ -412,7 +412,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.12.1');
+  assert.strictEqual(info.version, '1.12.2');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -640,7 +640,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.12.1');
+  assert.strictEqual(state.version, '1.12.2');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1443,6 +1443,30 @@ async function main() {
   vscodeStub.workspace.workspaceFolders = savedFoldersForSched;
   fsmod.rmSync(schedRoot, { recursive: true, force: true });
   console.log('  PASS  a scheduled turn auto-approves its confirmations (and only when unattended is on)');
+
+  /* 同一个 tick 里连发两条（面板和边栏各发一条、或手快连点）：_busy 必须在
+   * 第一个 await 之前就占位，否则两条都通过检查，两轮 runAgent 并行跑。 */
+  scriptedResponses.length = 0;
+  scriptedResponses.push('第一条的回答。');
+  scriptedResponses.push('第二条的回答。');
+  const firstSend = registeredProvider._handleSend('同时发的第一条', null, null);
+  const secondSend = registeredProvider._handleSend('同时发的第二条', null, null);
+  await Promise.all([firstSend, secondSend]);
+  assert.strictEqual(scriptedResponses.length, 1,
+    'the second concurrent send must be turned away instead of starting a second run');
+  assert.ok(!registeredProvider._history.some(function (m) {
+    return m.role === 'user' && m.content === '同时发的第二条';
+  }), 'the rejected message stays in the webview queue, not in the host history');
+
+  /* 正在回复时清空对话：runAgent 握着同一个 history 数组，清了也会被写回来。 */
+  delayNext = 600;
+  const slowRun = registeredProvider._handleSend('慢任务', null, null);
+  const historyBeforeClear = registeredProvider._history.length;
+  registeredProvider.clearHistory();
+  assert.strictEqual(registeredProvider._history.length, historyBeforeClear,
+    'clearHistory must refuse while a run is in flight');
+  await slowRun;
+  console.log('  PASS  concurrent sends start one run, and clearing waits for it');
 
   const cvSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
   const chatSource = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');

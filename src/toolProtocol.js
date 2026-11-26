@@ -2,15 +2,24 @@
 
 // 从文本中扫描出所有「括号平衡」的 JSON 对象候选，正确处理字符串里的括号与转义。
 // 这样即使模型在 JSON 前后写了说明文字，也能把工具调用抠出来。
+//
+// 代价：每遇到一个 { 就从头往后扫到配对 }，正常情况下扫到就跳过（i = j），
+// 但一段只有 { 没有 } 的文本（模型输出被截断、或代码块里全是花括号）会让每个
+// { 都扫到结尾，退化成 O(n²)——几十万字符就足以把扩展主线程卡住。
+// 用一个扫描预算封顶：超出就返回已经找到的完整对象，宁可少认一个调用。
+const MAX_SCAN_WORK = 4000000;
+
 function extractJsonObjects(text) {
   const out = [];
   const s = String(text || '');
+  let work = 0;
   for (let i = 0; i < s.length; i++) {
     if (s.charAt(i) !== '{') { continue; }
     let depth = 0;
     let inString = false;
     let escaped = false;
     for (let j = i; j < s.length; j++) {
+      if (++work > MAX_SCAN_WORK) { return out; }
       const ch = s.charAt(j);
       if (inString) {
         if (escaped) { escaped = false; }

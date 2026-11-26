@@ -6,6 +6,3 @@ scripts/**
 **/.DS_Store
 node_modules/**
 *.vsix
-ui-preview.html
-icon-preview.png
-scripts/_preview/**

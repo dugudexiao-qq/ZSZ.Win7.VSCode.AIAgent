@@ -180,7 +180,9 @@ function describeAt(at, now) {
   const clock = fmtClock(at);
   if (sameDay) { return '今天 ' + clock; }
   if (isTomorrow) { return '明天 ' + clock; }
-  return pad2(a.getMonth() + 1) + '-' + pad2(a.getDate()) + ' ' + clock;
+  /* 跨年时要带年份：1 月看到「12-31 02:00」会误以为是去年那条。 */
+  const year = a.getFullYear() !== b.getFullYear() ? a.getFullYear() + '-' : '';
+  return year + pad2(a.getMonth() + 1) + '-' + pad2(a.getDate()) + ' ' + clock;
 }
 
 /** '今天 02:00（还有 7 小时 7 分）· 每天' */

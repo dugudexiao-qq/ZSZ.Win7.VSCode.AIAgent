@@ -347,9 +347,16 @@ async function main() {
     assert.ok(/STATUS: OK/.test(out) || /3/.test(out), out);
   });
 
-  await test('runCommand whitelist is prefix-based (dir allows dirx)', async function () {
-    const allowed = agent.isShellCommandAllowed('dirx /b', ['dir']);
-    assert.strictEqual(allowed, true, 'documented behaviour: prefix match');
+  await test('runCommand whitelist matches whole program names, not string prefixes', async function () {
+    assert.strictEqual(agent.isShellCommandAllowed('dir /b', ['dir']), true, 'dir /b is on the whitelist');
+    assert.strictEqual(agent.isShellCommandAllowed('dirx /b', ['dir']), false,
+      'dirx is a different program: the prefix must end at a command boundary');
+    assert.strictEqual(agent.isShellCommandAllowed('dir /b && del x', ['dir']), false,
+      'chaining must not inherit the whitelist entry');
+    assert.strictEqual(agent.isShellCommandAllowed('dir /b; rm -rf ~', ['dir']), false,
+      'a semicolon starts a new command that also has to be whitelisted');
+    assert.strictEqual(agent.isShellCommandAllowed('dir /b | find "x"', ['dir', 'find']), true,
+      'every segment whitelisted -> allowed');
   });
 
   await test('runCommand blocked when allowShell=false', async function () {
@@ -1288,6 +1295,102 @@ async function main() {
       shellSection: '## Shell 执行环境\n- cmd 里 NEVER 使用 $env:'
     });
     assert.ok(/注释用中文/.test(full) && /NEVER 使用 \$env:/.test(full));
+  });
+
+  /* ---- 静态审计修掉的一批边界（v1.12.2）---- */
+
+  await test('toolStatusOf: file text that says STATUS: FAILED is not a failed command', function () {
+    const file = 'FILE: notes.md\n说明里写了一句 STATUS: FAILED，这是文档内容，不是命令结果。';
+    assert.strictEqual(agent.toolStatusOf(file), 'ok', 'readFile prose must not be graded as a failed command');
+    const cmd = 'COMMAND (cmd): exit /b 3\nSTATUS: FAILED | exit=3 | 12 ms\nSTDOUT:\n(empty)';
+    assert.strictEqual(agent.toolStatusOf(cmd), 'failed', 'a real command failure still counts');
+    const killed = 'COMMAND (cmd): ping -t x\nSTATUS: TIMEOUT (killed) | exit=null | 90000 ms';
+    assert.strictEqual(agent.toolStatusOf(killed), 'failed', 'killed commands count too');
+  });
+
+  await test('toolRoundBudget: 0 really disables tools, junk falls back to 20', function () {
+    assert.strictEqual(agent.toolRoundBudget(0), 0, '0 must survive: the setting documents "no tools at all"');
+    assert.strictEqual(agent.toolRoundBudget('0'), 0);
+    assert.strictEqual(agent.toolRoundBudget(undefined), 20);
+    assert.strictEqual(agent.toolRoundBudget('abc'), 20);
+    assert.strictEqual(agent.toolRoundBudget(-5), 0);
+    assert.strictEqual(agent.toolRoundBudget(5000), 1000, 'clamped to the documented maximum');
+    assert.strictEqual(agent.toolRoundBudget(7), 7);
+  });
+
+  await test('rules: deniedTools ignores case, so InsertText cannot slip past', function () {
+    const rulesLib = require('../src/rules');
+    const denied = rulesLib.checkToolCall({ tool: 'InsertText', args: {} },
+      { readOnly: false, deniedTools: ['inserttext'] });
+    assert.strictEqual(denied.allowed, false);
+    const ok = rulesLib.checkToolCall({ tool: 'readFile', args: { path: 'a.txt' } },
+      { readOnly: false, deniedTools: [] });
+    assert.strictEqual(ok.allowed, true);
+  });
+
+  await test('endpoint: a six-digit port is rejected, not turned into a hostname', function () {
+    const bad = endpoint.normalizeEndpoint('114514', 'http://127.0.0.1:8080/v1');
+    assert.strictEqual(bad.ok, false, '114514 is not a port and must not become http://114514');
+    assert.ok(/1-65535/.test(bad.error), bad.error);
+    const good = endpoint.normalizeEndpoint('9090', 'http://127.0.0.1:8080/v1');
+    assert.strictEqual(good.ok, true);
+    assert.strictEqual(good.port, '9090');
+  });
+
+  await test('sessions: a long history is no longer cut to the last 40 messages', function () {
+    const msgs = [];
+    for (let i = 0; i < 60; i++) { msgs.push({ role: i % 2 ? 'assistant' : 'user', content: 'm' + i }); }
+    const rt = require('../src/runtime');
+    const norm = rt.normalizeSessions({
+      activeId: 's1',
+      items: [{ id: 's1', title: 't', updatedAt: 1, history: msgs }]
+    });
+    assert.strictEqual(norm.items[0].history.length, 60, 'the whole task context must survive a restart');
+    assert.ok(rt.MAX_SESSION_MESSAGES >= 60);
+    /* 字符预算仍然生效：单条超大时不会把整个 globalState 撑爆 */
+    const huge = [{ role: 'user', content: 'x'.repeat(rt.MAX_SESSION_CHARS + 10) }];
+    const clipped = rt.normalizeSessions({ items: [{ id: 's', history: huge }] });
+    assert.ok(clipped.items[0].history.length <= 1);
+  });
+
+  await test('settings audit: stripJsonc keeps commas inside strings and drops real trailing commas', function () {
+    const lib = require('../src/settingsAudit');
+    const text = '{\n "a": "x, }", // 注释\n "b": [1, 2,],\n}';
+    const parsed = JSON.parse(lib.stripJsonc(text));
+    assert.strictEqual(parsed.a, 'x, }', 'a comma-brace inside a string is data, not syntax');
+    assert.deepStrictEqual(parsed.b, [1, 2], 'a real trailing comma must still be removed');
+  });
+
+  await test('toolProtocol: unbalanced brace flood cannot stall the parser', function () {
+    const started = Date.now();
+    const objs = protocol.extractJsonObjects('{'.repeat(200000));
+    const elapsed = Date.now() - started;
+    assert.deepStrictEqual(objs, [], 'no complete object in a brace flood');
+    assert.ok(elapsed < 2000, 'scan budget must cut the O(n^2) blowup, took ' + elapsed + ' ms');
+  });
+
+  await test('snapshots: revert refuses a sibling directory that merely shares the prefix', function () {
+    const snap = require('../src/snapshots');
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'zsz-snap-'));
+    const inside = path.join(base, 'app');
+    const sibling = path.join(base, 'app-evil');
+    fs.mkdirSync(inside, { recursive: true });
+    fs.mkdirSync(sibling, { recursive: true });
+    const victim = path.join(sibling, 'keep.txt');
+    fs.writeFileSync(victim, 'original', 'utf8');
+    const out = snap.revert(inside, [{ rel: '../app-evil/keep.txt', existed: false, content: null }]);
+    assert.strictEqual(out[0].ok, false, 'outside-the-workspace record must be skipped');
+    assert.strictEqual(fs.readFileSync(victim, 'utf8'), 'original', 'the sibling file must still exist');
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  await test('scheduler: a cross-year date keeps its year', function () {
+    const sched = require('../src/scheduler');
+    const now = new Date(2026, 11, 30, 22, 0, 0).getTime();
+    const at = new Date(2027, 0, 2, 2, 0, 0).getTime();
+    assert.ok(/^2027-01-02 02:00$/.test(sched.describeAt(at, now)), sched.describeAt(at, now));
+    const soon = new Date(2026, 11, 31, 23, 30, 0).getTime();
+    assert.ok(/^明天 23:30$/.test(sched.describeAt(soon, now)), sched.describeAt(soon, now));
   });
 
   await runtime.setWriteMode(false);
