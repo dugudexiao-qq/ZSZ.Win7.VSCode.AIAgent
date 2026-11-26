@@ -29,10 +29,14 @@ let firstSystemPrompt = '';
 let lastToolResult = '';
 let lastMessages = [];
 const createdPanels = [];
+const quickPicks = [];
 const executedCommands = [];
 
 const defaults = manifest.contributes.configuration.properties;
 let nextInputBoxValue = undefined;
+/* createQuickPick 脚本化：{type:'文字'} 模拟「输入后回车」，{pick:n} 模拟选中第 n 行，
+ * 'cancel' 模拟 Esc。undefined 等同于 cancel。 */
+let nextQuickPick = undefined;
 let nextConfirmAnswer = undefined;
 let neverResolveWarning = false;
 let lastUpdateTarget = null;
@@ -69,6 +73,42 @@ const vscodeStub = {
       return v;
     },
     showQuickPick: async function () { return undefined; },
+    createQuickPick: function () {
+      const change = [];
+      const accept = [];
+      const hide = [];
+      const qp = {
+        placeholder: '',
+        matchOnDescription: false,
+        value: '',
+        items: [],
+        selectedItems: [],
+        onDidChangeValue: function (fn) { change.push(fn); return disposable(); },
+        onDidAccept: function (fn) { accept.push(fn); return disposable(); },
+        onDidHide: function (fn) { hide.push(fn); return disposable(); },
+        hide: function () { hide.slice().forEach(function (fn) { fn(); }); },
+        dispose: function () {},
+        show: function () {
+          const script = nextQuickPick;
+          nextQuickPick = undefined;
+          setTimeout(function () {
+            if (!script || script === 'cancel') {
+              qp.value = '';
+              hide.slice().forEach(function (fn) { fn(); });
+              return;
+            }
+            if (script.type !== undefined) {
+              qp.value = script.type;
+              change.slice().forEach(function (fn) { fn(qp.value); });
+            }
+            qp.selectedItems = script.pick === undefined ? [] : [qp.items[script.pick]];
+            accept.slice().forEach(function (fn) { fn(); });
+          }, 0);
+        }
+      };
+      quickPicks.push(qp);
+      return qp;
+    },
     showOpenDialog: async function () { return undefined; },
     showSaveDialog: async function () { return undefined; },
     createWebviewPanel: function (viewType, title, column, options) {
@@ -347,7 +387,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.11.15');
+  assert.strictEqual(info.version, '1.11.16');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -361,6 +401,35 @@ async function main() {
   assert.ok(Array.isArray(globalStore['win7Agent.memoryRules']), 'rules must be persisted to globalState');
   assert.strictEqual(runtime.getRuleSummary().memoryCount, 1);
   console.log('  PASS  a standing rule is remembered and persisted in globalState');
+
+  /* v1.11.16 regression: typing in the rules picker and hitting Enter used to be
+   * a no-op (or worse, deleted whatever row the filter landed on). Enter must
+   * now always mean "remember what I typed". */
+  nextQuickPick = { type: '回答里不要用 emoji' };
+  await commands['win7Agent.manageRules']();
+  assert.ok(runtime.getMemoryRules().indexOf('回答里不要用 emoji') !== -1,
+    'typing a rule in the picker + Enter must add it');
+  assert.strictEqual(runtime.getMemoryRules().length, 2, 'existing rules must survive the add');
+
+  nextQuickPick = { type: '回答里不要用 emoji' };
+  await commands['win7Agent.manageRules']();
+  assert.strictEqual(runtime.getMemoryRules().length, 2, 'the same text must not be added twice');
+
+  nextQuickPick = { pick: 1 };
+  nextConfirmAnswer = '删除';
+  await commands['win7Agent.manageRules']();
+  assert.strictEqual(runtime.getMemoryRules().length, 1, 'picking a row still deletes it after confirmation');
+  assert.strictEqual(runtime.getMemoryRules()[0], '所有回答末尾加一句：已核对', 'the other rule must stay');
+
+  nextQuickPick = { pick: 0 };
+  nextConfirmAnswer = '取消';
+  await commands['win7Agent.manageRules']();
+  assert.strictEqual(runtime.getMemoryRules().length, 1, 'cancelling the delete confirmation must keep the rule');
+
+  nextQuickPick = 'cancel';
+  await commands['win7Agent.manageRules']();
+  assert.strictEqual(runtime.getMemoryRules().length, 1, 'Esc must change nothing');
+  console.log('  PASS  rules picker: typed text + Enter adds, duplicates are ignored, Esc is a no-op');
 
   const view = makeView();
   registeredProvider.resolveWebviewView(view);
@@ -546,7 +615,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.11.15');
+  assert.strictEqual(state.version, '1.11.16');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');

@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.11.15-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.11.16-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -46,9 +46,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.15** 的附件 `zsz-win7-vscode-aiagent-1.11.15.vsix`（约 190 KB）
-   （直链：[Releases/download/v1.11.15](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.15/zsz-win7-vscode-aiagent-1.11.15.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.15.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.11.16** 的附件 `zsz-win7-vscode-aiagent-1.11.16.vsix`（约 190 KB）
+   （直链：[Releases/download/v1.11.16](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.11.16/zsz-win7-vscode-aiagent-1.11.16.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.11.16.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
@@ -69,7 +69,7 @@
 ## 使用要点
 
 - **4 个运行开关**（标题栏下方）：写入（只读/可写）、写入确认、命令确认、子任务
-- **下拉菜单**：清空对话、API Key、长期要求、经验记忆、模型配置、新面板打开、服务地址
+- **下拉菜单**：清空对话、API Key、长期要求（点开后在输入框里直接写，回车即记住）、经验记忆、模型配置、新面板打开、服务地址
 - **多会话**：底部「切换对话 ▾」新建/切换/删除对话，各自独立上下文
 - **输入队列**：回复未结束可继续输入，队列可编辑、撤回、调序
 - **过程展示**：工具调用默认折叠一行（如 `✎ 查看文件：src/agent.js · 0.8 s`），失败行直接写中文原因，点标题展开详情
@@ -109,6 +109,7 @@
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.11.16**：修「长期要求」输入不进去。以前要先在列表里拉到「记住一条新要求」再回车，弹出第二层输入框；直接在列表里打字回车，要么没反应，要么把过滤命中的第一条旧要求删了。现在这个列表本身就是输入框：打字时第一行变成「记住：<你打的字>」，回车即新增；重复内容提示「已经记过」，不会重复添加。删除旧要求改为二次确认，避免空回车误删。同时去掉 `ignoreFocusOut`（老版本上会让输入框留着却收不到键盘），命令面板里也能直接搜到「长期要求」。
 - **v1.11.15**：撤掉 v1.11.12 加进详情页的 4 张自绘示意图——排版和字形在 VS Code 的 Markdown 渲染里都不好看，反而干扰阅读。README 回到纯文字条目，自测加了反向用例（README 不许再嵌 `media/docs` 图片、该目录不许留残图），避免以后又混进来。
 - **v1.11.14**：新增「检查设置（旧版本/同名插件残留）」命令。会去看 `settings.json` 里三类东西：已废弃、当前版本不认识的键、值还等于旧版内置默认值的项；另外扫描扩展目录里同一 ID 的其它版本目录（VS Code 只启用一个，但旧版的默认值会被合并进设置界面）。启动时只在发现新情况时提醒一次，清理必须你点一下才执行，绝不擅自改配置。
 - **v1.11.13**：导入的文件在消息发出后就从输入框上方消失。之前那排「已导入 (n)」标签会一直挂着，回答完了还在，看着像附件没发出去、或者下一次还要重发一遍。文件内容其实在导入那一刻就已经进了对话历史，标签只是临时提示，发出去即收起（对话记录里仍留一行「已导入文件」）。

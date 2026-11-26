@@ -786,9 +786,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.11.15, no built-in endpoint/model, 22 commands, all activation events', function () {
+  check('manifest: 1.11.16, no built-in endpoint/model, 22 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.11.15');
+    assert.strictEqual(manifest.version, '1.11.16');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -888,6 +888,41 @@ try {
     /* 活动栏/详情页图标仍是 svg，打包器必须继续把 media 下的 svg 打进去。 */
     const pack = fs.readFileSync(path.join(__dirname, 'pack-vsix.js'), 'utf8');
     assert.ok(/addDir\('media'[\s\S]{0,160}svg/.test(pack), 'packer must include media/**/*.svg');
+  });
+
+  /* v1.11.16: 在「长期要求」选择框里打字回车必须算数——列表是输入框也是菜单，
+   * 第一行永远是「记住：<你刚打的字>」，回车不能被过滤结果吃掉。 */
+  check('rules picker: typed text + Enter always means "remember this"', function () {
+    const rp = require('../src/rulePicker');
+    const memory = ['注释用中文'];
+
+    const empty = rp.buildItems(memory, {}, '', 'http://host:8080/v1');
+    assert.strictEqual(empty[0].kind, 'rule', 'with no input the first row is an existing rule');
+    assert.ok(empty.some(function (i) { return i.action === 'endpoint' && /host:8080/.test(i.description); }),
+      'endpoint row must show the current address');
+
+    const typed = rp.buildItems(memory, {}, '  回答用中文  ', '');
+    assert.strictEqual(typed[0].kind, 'addNew', 'typed text must become the first row');
+    assert.strictEqual(typed[0].value, '回答用中文', 'typed text is trimmed');
+    assert.ok(/记住/.test(typed[0].label), 'the row must say it will be remembered');
+    assert.strictEqual(typed[0].alwaysShow, true, 'the typed row must survive filtering');
+
+    const dup = rp.buildItems(memory, {}, '注释用中文', '');
+    assert.strictEqual(dup[0].kind, 'duplicate', 'an existing rule must not be offered as new');
+    assert.strictEqual(dup.filter(function (i) { return i.kind === 'addNew'; }).length, 0);
+
+    /* 没有高亮行时（过滤后为空）回车仍要落到输入文本上 */
+    assert.strictEqual(rp.resolveAccept([], '回报率用百分数', memory).kind, 'addNew');
+    assert.strictEqual(rp.resolveAccept([], '  ', memory), undefined);
+    assert.strictEqual(rp.resolveAccept([{ kind: 'rule', ruleIndex: 0 }], 'abc', memory).kind, 'rule',
+      'a highlighted row still wins, so deleting stays possible');
+
+    /* 宿主侧必须用 createQuickPick（可输入），而不是 showQuickPick + 二次弹框；
+     * 也不能再拿 ignoreFocusOut 把输入框挂成「假活」状态。 */
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'extension.js'), 'utf8');
+    assert.ok(/createQuickPick\(\)/.test(ext), 'manageRules must build its own quick pick');
+    assert.ok(!/ignoreFocusOut/.test(ext.replace(/\/\*[\s\S]*?\*\//g, '')),
+      'ignoreFocusOut breaks Enter on old VS Code builds and must stay out');
   });
 
   /* v1.11.13: 导入的文件只属于「刚导入」这一小段时间，消息一发出去就该从输入框

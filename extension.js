@@ -15,6 +15,7 @@ const rules = require('./src/rules');
 const lessonsLib = require('./src/lessons');
 const endpoint = require('./src/endpoint');
 const settingsAudit = require('./src/settingsAudit');
+const rulePicker = require('./src/rulePicker');
 
 const APP = manifest.displayName;
 const EXT_ID = manifest.publisher + '.' + manifest.name;
@@ -331,7 +332,6 @@ function activate(context) {
           : '模型服务地址。本扩展不内置地址或端口，请填写完整地址，例如 http://主机:端口/v1',
         value: current,
         placeHolder: current ? current : 'http://主机:端口/v1',
-        ignoreFocusOut: true,
         validateInput: function (text) {
           const r = endpoint.normalizeEndpoint(text, current);
           return r.ok ? null : r.error;
@@ -378,8 +378,7 @@ function activate(context) {
       const key = await vscode.window.showInputBox({
         prompt: 'API key（本地 llama.cpp / Ollama / LM Studio 服务可留空）。保存在 VS Code SecretStorage。',
         placeHolder: 'sk-...（本地模型服务请留空）',
-        password: true,
-        ignoreFocusOut: true
+        password: true
       });
       if (key === undefined) { return; }
       const trimmed = key.trim();
@@ -444,10 +443,10 @@ function activate(context) {
           vscode.window.showErrorMessage(APP + ': 切换配置失败（' + (e && e.message ? e.message : e) + '）');
         }
       } else if (pick.action === 'add') {
+        await nextTick();
         const name = await vscode.window.showInputBox({
           prompt: '给当前配置起个名字（例如：本地 llama / 内网大模型）',
-          placeHolder: '配置名',
-          ignoreFocusOut: true
+          placeHolder: '配置名'
         });
         if (name === undefined) { return; }
         const key = await runtime.getApiKey();
@@ -687,18 +686,42 @@ function activate(context) {
 
   /* ---- standing rules: defaults in settings.json + memory in globalState ---- */
 
+  /* QuickPick 关闭到下一个输入框获得焦点之间要留一帧：命令面板/选择器收起时
+   * VS Code 会先把焦点还给编辑器，紧接着打开的 InputBox 有时抢不到键盘，
+   * 表现就是「框在那儿，打字/回车没反应」（1.70 这类老版本尤其明显）。 */
+  function nextTick(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms === undefined ? 120 : ms); });
+  }
+
+  async function commitRule(text) {
+    const result = await runtime.addMemoryRule(text);
+    await refresh();
+    if (result.ok) { vscode.window.showInformationMessage(APP + ': ' + result.message); }
+    else { vscode.window.showWarningMessage(APP + ': ' + result.message); }
+    return result;
+  }
+
+  async function promptNewRule() {
+    const text = await vscode.window.showInputBox({
+      prompt: '这条要求会长期记住，并在之后每次请求前注入系统提示词（存于 VS Code globalState）。',
+      placeHolder: '例如：所有代码注释用中文；回答控制在 200 字以内',
+      /* 不设 ignoreFocusOut：老版本里「失焦不关闭」会让框留着却不再持有键盘，
+       * 看着像输入框坏了。宁可切窗口时自动取消，也不要一个假活的框。 */
+      validateInput: function (value) {
+        const v = String(value || '').trim();
+        if (!v) { return '写点内容再回车；Esc 取消'; }
+        if (v.length > 200) { return '最多 200 个字符'; }
+        return null;
+      }
+    });
+    if (text === undefined) { return; }
+    await commitRule(text);
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand('win7Agent.addRule', async function () {
-      const text = await vscode.window.showInputBox({
-        prompt: '这条要求会长期记住，并在之后每次请求前注入系统提示词（存于 VS Code globalState）。',
-        placeHolder: '例如：所有代码注释用中文；回答控制在 200 字以内',
-        ignoreFocusOut: true
-      });
-      if (text === undefined) { return; }
-      const result = await runtime.addMemoryRule(text);
-      await refresh();
-      if (result.ok) { vscode.window.showInformationMessage(APP + ': ' + result.message); }
-      else { vscode.window.showWarningMessage(APP + ': ' + result.message); }
+      await nextTick(0);
+      await promptNewRule();
     })
   );
 
@@ -706,26 +729,52 @@ function activate(context) {
     vscode.commands.registerCommand('win7Agent.manageRules', async function () {
       const memory = runtime.getMemoryRules();
       const summary = runtime.getRuleSummary();
-      const items = memory.map(function (rule, index) {
-        return { label: rule, description: '点击删除这条记忆', ruleIndex: index };
-      });
-      items.push({ label: '$(add) 记住一条新要求', description: '追加到长期记忆', action: 'add' });
-      items.push({ label: '$(trash) 清空全部记忆', description: '出厂默认规则不受影响', action: 'clear' });
-      items.push({ label: '$(eye) 查看生效提示词与约束', description: '输出到 Output 面板', action: 'show' });
-      items.push({ label: '$(plug) 设置服务地址 / 端口', description: '当前 ' + endpoint.shortEndpoint(runtime.getConfig().baseUrl), action: 'endpoint' });
-      items.push({ label: '$(gear) 打开约束设置', description: '只读 / 工具黑名单 / Shell / 超时', action: 'settings' });
-      items.push({ label: '$(file-text) 直接编辑 settings.json', description: '设置界面空白时用这个', action: 'settingsjson' });
-      const pick = await vscode.window.showQuickPick(items, {
-        placeHolder: '长期通用要求：默认 ' + summary.defaultCount + ' 条 + 记忆 ' + summary.memoryCount + ' 条｜只读 ' +
-          (summary.constraints.readOnly ? '开' : '关') + '｜Shell ' + (summary.constraints.allowShell ? '开' : '关')
+      const endpointLabel = endpoint.shortEndpoint(runtime.getConfig().baseUrl);
+
+      /* 用 createQuickPick 而不是 showQuickPick：选择框本身就是「输入框」，
+       * 用户打完字回车必须记下这条，不能被当成过滤后选中第一条（那会误删）。 */
+      const pick = await new Promise(function (resolve) {
+        const qp = vscode.window.createQuickPick();
+        let settled = false;
+        function finish(value) {
+          if (settled) { return; }
+          settled = true;
+          resolve(value);
+          qp.hide();
+        }
+        qp.placeholder = rulePicker.placeholder(summary);
+        qp.matchOnDescription = true;
+        qp.items = rulePicker.buildItems(memory, summary, '', endpointLabel);
+        qp.onDidChangeValue(function (value) {
+          qp.items = rulePicker.buildItems(memory, summary, value, endpointLabel);
+        });
+        qp.onDidAccept(function () {
+          finish(rulePicker.resolveAccept(qp.selectedItems, qp.value, memory));
+        });
+        qp.onDidHide(function () {
+          if (!settled) { settled = true; resolve(undefined); }
+          qp.dispose();
+        });
+        qp.show();
       });
       if (!pick) { return; }
-      if (pick.ruleIndex !== undefined) {
+
+      if (pick.kind === 'addNew') {
+        await commitRule(pick.value);
+      } else if (pick.kind === 'duplicate') {
+        vscode.window.showInformationMessage(APP + ': 这条要求已经在记忆里了，没有重复添加。');
+      } else if (pick.kind === 'rule') {
+        /* 空输入时第一行就是一条规则，回车很容易误删——删之前问一句。 */
+        const label = memory[pick.ruleIndex];
+        const answer = await vscode.window.showWarningMessage(
+          '删除这条长期要求？\n「' + label + '」', { modal: true }, '删除');
+        if (answer !== '删除') { return; }
         await runtime.removeMemoryRule(pick.ruleIndex);
         await refresh();
         vscode.window.showInformationMessage(APP + ': 已删除一条记忆规则。');
       } else if (pick.action === 'add') {
-        await vscode.commands.executeCommand('win7Agent.addRule');
+        await nextTick();
+        await promptNewRule();
       } else if (pick.action === 'clear') {
         const answer = await vscode.window.showWarningMessage('清空全部记忆规则？出厂默认规则会保留。', { modal: true }, '清空');
         if (answer === '清空') {
@@ -736,6 +785,7 @@ function activate(context) {
       } else if (pick.action === 'show') {
         await vscode.commands.executeCommand('win7Agent.showPrompt');
       } else if (pick.action === 'endpoint') {
+        await nextTick();
         await vscode.commands.executeCommand('win7Agent.setEndpoint');
       } else if (pick.action === 'settings') {
         await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:' + EXT_ID + ' win7Agent');

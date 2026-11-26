@@ -2,7 +2,7 @@
   "name": "win7-ai-agent",
   "displayName": "ZSZ.Win7.VSCode.AIAgent",
   "description": "适用于 Windows 7 + VS Code 1.70.x 的本地大模型 AI Agent。",
-  "version": "1.11.15",
+  "version": "1.11.16",
   "publisher": "dugudexiao",
   "icon": "media/icon.png",
   "author": {
@@ -137,12 +137,12 @@
       },
       {
         "command": "win7Agent.addRule",
-        "title": "记住一条通用要求 (Remember a Standing Rule)",
+        "title": "长期要求：记住一条 (Remember a Standing Rule)",
         "category": "ZSZ.Win7.VSCode.AIAgent"
       },
       {
         "command": "win7Agent.manageRules",
-        "title": "管理规则与约束 (Manage Rules & Constraints)",
+        "title": "长期要求：管理规则与约束 (Manage Rules & Constraints)",
         "category": "ZSZ.Win7.VSCode.AIAgent"
       },
       {
