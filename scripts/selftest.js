@@ -798,9 +798,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.12.2, no built-in endpoint/model, 24 commands, all activation events', function () {
+  check('manifest: 1.12.3, no built-in endpoint/model, 25 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.12.2');
+    assert.strictEqual(manifest.version, '1.12.3');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');
@@ -836,7 +836,7 @@ try {
     assert.strictEqual(props['win7Agent.constraints.deniedTools'].default.indexOf('runCommand'), -1, 'runCommand must not be blacklisted by default');
     const factoryRules = props['win7Agent.defaultRules'].default.join('\n');
     assert.ok(!/不修改任何文件|默认只做解释和建议/.test(factoryRules), 'factory rules must NOT forbid writing files');
-    assert.strictEqual(manifest.contributes.commands.length, 24);
+    assert.strictEqual(manifest.contributes.commands.length, 25);
     const ids = manifest.contributes.commands.map(function (c) { return c.command; });
     assert.ok(ids.indexOf('win7Agent.switchProfile') !== -1, 'model-profile switcher command must exist');
     assert.ok(ids.indexOf('win7Agent.toggleShellConfirm') !== -1, 'shell-confirmation toggle command must exist');
@@ -1198,6 +1198,142 @@ try {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  /* ---- 版本更新检查（v1.12.3）---- */
+
+  check('update source accepts owner/repo, GitHub URLs and custom feeds', function () {
+    const u = require('../src/updateCheck');
+    const gh = u.parseRepo('dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent');
+    assert.strictEqual(gh.kind, 'github');
+    assert.strictEqual(gh.owner, 'dugudexiao-qq');
+    assert.strictEqual(gh.repo, 'ZSZ.Win7.VSCode.AIAgent');
+
+    const withGit = u.parseRepo('someone/agent.git');
+    assert.strictEqual(withGit.repo, 'agent', '.git suffix must be trimmed');
+
+    const pasted = u.parseRepo('https://github.com/acme/my-agent');
+    assert.strictEqual(pasted.kind, 'github', 'a pasted repo page must become an API query');
+    assert.strictEqual(pasted.owner, 'acme');
+
+    const feed = u.parseRepo('https://intranet.example.com/aiagent/latest.json');
+    assert.strictEqual(feed.kind, 'feed');
+    const withQuery = u.parseRepo('https://intranet.example.com/f.json?token=abc');
+    assert.ok(/\?token=abc$/.test(withQuery.url), 'feed query string must survive');
+
+    assert.strictEqual(u.parseRepo(''), null);
+    assert.strictEqual(u.parseRepo('   '), null);
+    assert.strictEqual(u.parseRepo('not a repo'), null);
+    assert.strictEqual(u.parseRepo('ftp://x/y.json'), null);
+
+    assert.ok(/api\.github\.com/.test(u.buildRequest(gh).hostname));
+    assert.ok(/\/releases\/latest$/.test(u.buildRequest(gh).path));
+    assert.strictEqual(u.buildRequest(feed).hostname, 'intranet.example.com');
+  });
+
+  check('versions compare numerically, and a release beats its prerelease', function () {
+    const u = require('../src/updateCheck');
+    assert.strictEqual(u.compareVersions('1.12.2', '1.12.1'), 1);
+    assert.strictEqual(u.compareVersions('1.12.10', '1.12.9'), 1, 'string compare would get this wrong');
+    assert.strictEqual(u.compareVersions('v1.12.2', '1.12.2'), 0, 'the v prefix is decoration');
+    assert.strictEqual(u.compareVersions('1.13.0', '1.12.99'), 1);
+    assert.strictEqual(u.compareVersions('2.0.0-beta.1', '2.0.0'), -1);
+    assert.strictEqual(u.compareVersions('2.0.0', '2.0.0-beta.1'), 1);
+    assert.strictEqual(u.isNewer('1.12.3', '1.12.2'), true);
+    assert.strictEqual(u.isNewer('1.12.2', '1.12.2'), false);
+    assert.strictEqual(u.compareVersions('garbage', '1.0.0'), 0, 'unparsable input must not invent an update');
+  });
+
+  check('a feed can be a plain JSON, a GitHub release, or a list', function () {
+    const u = require('../src/updateCheck');
+    const plain = u.extractRelease({ version: '1.2.3', url: 'https://x/y.vsix', notes: 'fix' });
+    assert.deepStrictEqual([plain.version, plain.url, plain.notes], ['1.2.3', 'https://x/y.vsix', 'fix']);
+
+    const gh = u.extractRelease({
+      tag_name: 'v1.13.0',
+      url: 'https://api.github.com/repos/a/b/releases/1',
+      html_url: 'https://github.com/a/b/releases/tag/v1.13.0',
+      body: 'notes'
+    });
+    assert.strictEqual(gh.version, '1.13.0', 'GitHub tag_name must be accepted raw');
+    assert.strictEqual(gh.url, 'https://github.com/a/b/releases/tag/v1.13.0',
+      'the human release page wins over the api.github.com URL');
+
+    const apiOnly = u.extractRelease({ tag_name: 'v2.0.0', url: 'https://api.github.com/repos/a/b/releases/2' });
+    assert.strictEqual(apiOnly.url, '', 'an API URL alone is useless to a human: let the caller fall back');
+
+    const listed = u.extractRelease({
+      releases: [
+        { version: '1.12.0' },
+        { version: '1.13.2' },
+        { version: '1.12.9' }
+      ]
+    });
+    assert.strictEqual(listed.version, '1.13.2', 'pick the highest, not the first');
+
+    assert.strictEqual(u.extractRelease({}), null);
+    assert.strictEqual(u.extractRelease(null), null);
+  });
+
+  check('auto check runs once a day, manual always, skip silences exactly one version', function () {
+    const u = require('../src/updateCheck');
+    const day = 24 * 60 * 60 * 1000;
+    const now = 1700000000000;
+    assert.strictEqual(u.shouldCheck({ enabled: true, lastCheckAt: 0, now: now }), true, 'never checked');
+    assert.strictEqual(u.shouldCheck({ enabled: true, lastCheckAt: now - day + 1000, now: now }), false, 'too soon');
+    assert.strictEqual(u.shouldCheck({ enabled: true, lastCheckAt: now - day - 1, now: now }), true, 'a day passed');
+    assert.strictEqual(u.shouldCheck({ enabled: false, lastCheckAt: 0, now: now }), false, 'switch off');
+    assert.strictEqual(u.shouldCheck({ manual: true, enabled: false, lastCheckAt: now, now: now }), true,
+      'the command must ignore both the switch and the throttle');
+    assert.strictEqual(u.shouldCheck({ enabled: true, lastCheckAt: now + 99999, now: now }), true,
+      'a clock拨回 must not freeze the check forever');
+
+    assert.strictEqual(u.shouldNotify('1.13.0', '1.12.2', ''), true);
+    assert.strictEqual(u.shouldNotify('1.13.0', '1.12.2', '1.13.0'), false, 'skipped version stays quiet');
+    assert.strictEqual(u.shouldNotify('1.13.0', '1.12.2', '1.12.9'), true, 'skipping an older one must not mute this');
+    assert.strictEqual(u.shouldNotify('1.12.2', '1.12.2', ''), false);
+  });
+
+  checkAsync('checkLatest reports a usable version and never throws on a bad source', async function () {
+    const u = require('../src/updateCheck');
+    const ok = await u.checkLatest('acme/agent', {
+      get: async function () { return JSON.stringify({ tag_name: 'v9.9.9', html_url: 'https://x' }); }
+    });
+    assert.strictEqual(ok.ok, true);
+    assert.strictEqual(ok.latest.version, '9.9.9');
+    assert.strictEqual(ok.target.label, 'acme/agent');
+
+    const netFail = await u.checkLatest('acme/agent', {
+      get: async function () { throw new Error('ECONNREFUSED'); }
+    });
+    assert.strictEqual(netFail.ok, false);
+    assert.ok(/ECONNREFUSED/.test(netFail.error), netFail.error);
+
+    const html = await u.checkLatest('https://intranet/x', {
+      get: async function () { return '<html>login</html>'; }
+    });
+    assert.strictEqual(html.ok, false);
+    assert.ok(/不是 JSON/.test(html.error), html.error);
+
+    const empty = await u.checkLatest('https://intranet/x', {
+      get: async function () { return '{"message":"no releases"}'; }
+    });
+    assert.strictEqual(empty.ok, false);
+    assert.ok(/没有版本号/.test(empty.error), empty.error);
+
+    const badRepo = await u.checkLatest('not a repo', { get: async function () { return '{}'; } });
+    assert.strictEqual(badRepo.ok, false);
+    assert.ok(/无法识别/.test(badRepo.error), badRepo.error);
+  });
+
+  check('the update settings exist with a sane default, and the command is declared', function () {
+    const props = manifest.contributes.configuration.properties;
+    assert.strictEqual(props['win7Agent.updateRepo'].default, 'dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent');
+    assert.strictEqual(props['win7Agent.checkUpdatesOnStartup'].default, true);
+    assert.ok(manifest.activationEvents.indexOf('onCommand:win7Agent.checkUpdate') !== -1,
+      'the check-update command must activate the extension');
+    const cmd = manifest.contributes.commands.filter(function (c) { return c.command === 'win7Agent.checkUpdate'; })[0];
+    assert.ok(cmd && /更新/.test(cmd.title), 'command title must be findable by 更新');
   });
 
   await Promise.all(pending);

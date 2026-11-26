@@ -5,7 +5,7 @@ node_modules/
 # dist/ 只放「当前最新一版」安装包：GitCode 镜像没有可用的 Releases，
 # 国内用户在文件页直接下载它。旧版本一律走 GitHub Releases，不再入库。
 # 发新版本时把下面这行改成新文件名（pack-vsix.js 会打印提醒）。
-!dist/zsz-win7-vscode-aiagent-1.12.2.vsix
+!dist/zsz-win7-vscode-aiagent-1.12.3.vsix
 
 # 临时文件（审计/测试脚本产生的中间产物）
 __tmp_*

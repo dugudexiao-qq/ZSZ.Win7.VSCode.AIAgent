@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.12.2-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.12.3-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -46,9 +46,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.12.2** 的附件 `zsz-win7-vscode-aiagent-1.12.2.vsix`（约 190 KB）
-   （直链：[Releases/download/v1.12.2](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.12.2/zsz-win7-vscode-aiagent-1.12.2.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.12.2.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.12.3** 的附件 `zsz-win7-vscode-aiagent-1.12.3.vsix`（约 190 KB）
+   （直链：[Releases/download/v1.12.3](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.12.3/zsz-win7-vscode-aiagent-1.12.3.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.12.3.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)（源码与 dist/ 安装包同步，在文件页点「下载」）。
@@ -73,6 +73,7 @@
 - **多会话**：底部「切换对话 ▾」新建/切换/删除对话，各自独立上下文
 - **输入队列**：回复未结束可继续输入，队列可编辑、撤回、调序；一轮结束（成功或超时）就自动发下一条，**不再等人点「继续队列」**；只有连续 2 次超时、认证失败、手动 Stop 才暂停
 - **定时任务**：把任务写好，菜单 →「定时发送…」，选 30 分钟后 / 凌晨 02:00 / 自定义时刻，可只跑一次或每天同一时间；到点自动发起一整轮，正在回复时会排队等这一轮结束；夜里无人值守时确认弹窗按推荐自动执行
+- **版本更新提醒**：启动后一天查一次新版本，有更新时弹一条带「查看更新 / 跳过此版本」的提示；更新源可自定义（官方 GitHub、别人的仓库、内网自建 feed 都行），断网/内网不通只写日志，不打扰你
 - **过程展示**：工具调用默认折叠一行（如 `✎ 查看文件：src/agent.js · 0.8 s`），失败行直接写中文原因，点标题展开详情
 - **绿色「已完成」≠ 事情真做成了**：以回答下方的自检行为准
 
@@ -94,6 +95,34 @@
 - **无人值守：确认弹窗不弹，改按推荐执行**。夜里没人点弹窗，老做法是等 `confirmTimeoutMs`（默认 120 秒）超时后当拒绝，整条任务白跑。现在定时任务那一轮里，写入确认、命令确认、工具审批三个弹窗都按推荐选项（= 弹窗上的主按钮）自动通过，并在对话里留一条 `[无人值守] 定时任务未弹窗询问，已按推荐自动确认：…`，事后能看清 AI 替你点了什么。想恢复逐次确认：设置里关掉 `win7Agent.scheduledUnattended`。注意这**不会**绕过只读模式——`constraints.readOnly` 仍然拦住所有写入。
 - **任务最多 20 条**，随窗口生命周期存活；存在 globalState 里，重载/重启不丢。
 
+## 版本更新提醒
+
+扩展本身不带自动升级（VSIX 是离线安装的），所以它只做「提醒」：查到新版本后弹一条提示，点「查看更新」打开下载页，点「跳过此版本」就不再念这一个版本。
+
+**更新源可以改**。设置里把 `win7Agent.updateRepo` 填成下面任意一种：
+
+| 写法 | 例子 | 走哪里 |
+|---|---|---|
+| `owner/repo` | `dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent`（默认） | GitHub Releases API |
+| GitHub 仓库主页 | `https://github.com/你的镜像/agent` | 自动转成 API 查询 |
+| 自定义 feed | `https://内网/aiagent/latest.json` | 直接 GET 这个 JSON |
+
+feed 的内容很宽松，认这三种形态之一即可：
+
+```json
+{ "version": "1.12.3", "url": "https://内网/aiagent/x.vsix", "notes": "改了什么" }
+{ "tag_name": "v1.12.3", "html_url": "https://内网/aiagent/releases", "body": "改了什么" }
+{ "releases": [ { "version": "1.12.2" }, { "version": "1.12.3" } ] }
+```
+
+几条行为约定：
+
+- **一天最多查一次**（`checkUpdatesOnStartup` 关掉后完全不自动查），手动命令不受限制；改 `updateRepo` 会清掉这个节流，下次激活立刻生效。
+- **查不到不打扰**：断网、代理拦截、feed 写错都只写输出面板日志；只有你手动点「检查更新」时才会把失败原因弹出来。
+- **「检查更新」在命令面板**（`ZSZ.Win7.VSCode.AIAgent: 检查更新`），不受「跳过此版本」影响，随时能强制查一次。
+- 只认 `http/https` 链接；feed 返回 404 时会提示「仓库或 feed 地址不对，或还没有发布任何版本」。
+- 版本比较按数字段（`1.12.10 > 1.12.9`），`v` 前缀自动忽略，正式版大于同号预发布版。
+
 ## 配置速查
 
 所有设置项前缀 `win7Agent`，设置界面有中文说明。
@@ -104,7 +133,7 @@
 | `preferShell` | auto | 默认 Shell：auto=有 Git Bash 用 bash，否则 PowerShell |
 | `constraints.readOnly` | true | 只读模式（写入工具被拦截） |
 | `constraints.confirmWrite` / `confirmShell` | true | 写入 / 命令逐条确认 |
-| `constraints.allowShell` / `allowedShellCommands` | true / 空 | Shell 总开关 / 命令白名单（前缀匹配） |
+| `constraints.allowShell` / `allowedShellCommands` | true / 空 | Shell 总开关 / 命令白名单（按 `;` `&&` `\|` 分段，每段都要命中） |
 | `constraints.deniedTools` | insertText | 工具黑名单 |
 | `maxHistoryMessages` / `maxContextChars` | 100 / 8000 | 历史条数 / 上下文字符预算（8k 模型建议 6000–8000，16k 以上 14000） |
 | `maxToolRounds` / `timeoutMs` | 20 / 1000000 | 工具轮数 / 请求超时 |
@@ -112,6 +141,8 @@
 | `stream` / `confirmTimeoutMs` | false / 120000 | 打字机显示（本地回放）/ 确认弹窗超时 |
 | `scheduledUnattended` | true | 定时任务无人值守：确认弹窗改按推荐自动执行 |
 | `sessions` / `autoLearn` | - / true | 会话保留配置 / 自动经验学习 |
+| `updateRepo` | 官方仓库 | 版本更新源：`owner/repo` 或返回 JSON 的 https 地址（留空=不检查） |
+| `checkUpdatesOnStartup` | true | 启动后自动查新版本（一天最多一次，失败静默） |
 
 ## 排错速查
 
@@ -129,6 +160,7 @@
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.12.3**：新增**版本更新提醒**。启动后一天查一次新版本，有更新时弹「查看更新 / 跳过此版本」，跳过的版本不再打扰；命令面板「检查更新」可随时手动查。**更新源可自定义**：`win7Agent.updateRepo` 支持 `owner/repo`（GitHub Releases）、GitHub 仓库主页链接，或任何返回 JSON 的 https 地址（内网镜像自建 feed）；断网/内网不通只写日志，手动查才报错。顺带把白名单说明改成「按命令分段匹配」，`maxToolRounds=0` 真正禁用工具。
 - **v1.12.2**：一次全量代码审计（漏洞 + 冗余）。修的真实缺陷：① **命令白名单只比前缀**——`allowedShellCommands: ["git"]` 时 `git status; del /s /q C://*` 也被放行，现在按 `;` `&&` `||` `|` 换行切开，每段都要命中白名单且前缀后必须是命令边界（`dirx` 不再冒充 `dir`）。② **连点发送启动两轮**：`_busy` 原来在两个 `await` 之后才置位，面板和边栏同时发（或手快连点）会有两轮 runAgent 并行、共用同一个取消令牌，现在先占位再 await。③ 正在回复时「清空对话」会把这一轮的回复写回空白会话，现在与切换/删除一致，先提示再拒绝。④ `maxToolRounds: 0` 文档写「完全禁用工具」，实际被 `|| 20` 吃成 20，现在真的禁用。⑤ 索引/解析两处卡死风险：`{` 泛滥的模型输出让括号扫描退化成 O(n²)（已加扫描预算），命令输出跨 chunk 的中文被切成乱码（改用 StringDecoder）。⑥ 小修：文件正文里写着 `STATUS: FAILED` 不再被当成本轮命令失败；`deniedTools` 大小写不敏感；撤回快照的路径校验从字符串前缀改为 `path.relative`（`app-evil` 不再被当成 `app`）；settings.json 带 BOM 时设置体检不再「假干净」；`stripJsonc` 不再改动字符串里的 `, }`；只输入 6 位数字不再被当成主机名；会话持久化从「只留 40 条」放宽到 200 条 / 40 万字符，长任务重开窗口不再丢任务前提。清理：删掉开发期残留的 23 张 `scripts/_preview` 截图、两个一次性图标脚本、`ui-preview.html`、`icon-preview.png` 和 4 个未使用的图标变体；仓库里只保留最新一版 `dist/` 安装包（旧版走 Releases）。
 - **v1.12.1**：修两个「队列停住」和「定时任务白跑」的问题。① 队列的「已暂停」状态会一直粘着：某次 401 / Stop / 弹窗超时把队列标成暂停后，后面每一轮**成功了也不再往下发**，排队的第二条永远停在「待发送」，得手动点「继续队列」——现在任何一轮成功都会清掉暂停标记并立刻发下一条（宿主在缺 Key 的提前返回路径上也补发 `done`，不再让面板以为有任务在飞）。② 定时任务夜里没人守着，写入/命令/工具审批弹窗等满 120 秒被当成拒绝，整条任务白跑——现在定时任务那一轮按推荐选项自动确认，并在对话里留下「[无人值守] 已按推荐自动确认：…」的记录；新增设置 `win7Agent.scheduledUnattended`（默认开）可关掉。
 - **v1.12.0**：新增**定时任务**。内网算力白天紧张，可以把跑批排到夜里：输入框写好任务 → 菜单「定时发送…」→ 选 30 分钟后 / 凌晨 02:00 / 自定义 `HH:MM`，并可选「每天这个时间」或「只跑一次」。到点由扩展宿主自己发起一整轮（历史里那条消息带 `⏰ 02:00 定时` 角标），正在回复时排队等这一轮结束；`Ctrl+Shift+P` →「定时任务：管理」可立即执行、暂停、删除。任务存 globalState，重载不丢；计时器只有一个，分段重排以抵抗系统休眠/改时钟。限制写进 README：VS Code 关着不会执行，错过的直接跳过（不补跑）。

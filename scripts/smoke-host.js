@@ -39,6 +39,8 @@ let nextInputBoxValue = undefined;
 let nextQuickPick = undefined;
 let nextConfirmAnswer = undefined;
 let neverResolveWarning = false;
+/* 最近一次警告文案：检查更新这类「只弹一次提示」的命令靠它断言。 */
+let lastWarningText = '';
 let lastUpdateTarget = null;
 
 function disposable() { return { dispose: function () {} }; }
@@ -130,7 +132,8 @@ const vscodeStub = {
     },
     showInformationMessage: function () { return Promise.resolve(undefined); },
     showErrorMessage: function () { return Promise.resolve(undefined); },
-    showWarningMessage: async function () {
+    showWarningMessage: async function (text) {
+      lastWarningText = String(text || '');
       // Simulate a modal that is hidden behind another window / nobody clicks:
       // before the timeout fix this promise never settles and runAgent hangs.
       if (neverResolveWarning) { return new Promise(function () {}); }
@@ -185,6 +188,7 @@ const vscodeStub = {
     },
     asRelativePath: function (uri) { return uri.fsPath || 'app.js'; },
     onDidChangeWorkspaceFolders: function () { return disposable(); },
+    onDidChangeConfiguration: function () { return disposable(); },
     findFiles: async function () { return [{ fsPath: 'C:/proj/app.js' }]; },
     // Backed by the real disk when the path exists, so readFile's size gate and
     // binary detection can be tested for real; falls back to the fake project
@@ -316,6 +320,8 @@ async function main() {
   settings['win7Agent.model'] = 'qwen3.8-flash-next-unsloth-ud-iq4-xs';
   settings['win7Agent.stream'] = false;
   settings['win7Agent.maxToolRounds'] = 4;
+  /* 离线测试不能真的去请求 GitHub：关掉启动自动检查。 */
+  settings['win7Agent.checkUpdatesOnStartup'] = false;
   settings['win7Agent.timeoutMs'] = 1000000;
 
   const context = {
@@ -337,7 +343,8 @@ async function main() {
   const ext = require('../extension');
   await ext.activate(context);
 
-  assert.strictEqual(Object.keys(commands).length, 24, 'all 24 commands must be registered');
+  assert.strictEqual(Object.keys(commands).length, 25, 'all 25 commands must be registered');
+  assert.ok(commands['win7Agent.checkUpdate'], 'the update-check command must be registered');
   assert.ok(registeredProvider, 'webview provider must be registered');
   assert.ok(commands['win7Agent.toggleWriteMode'], 'write-mode toggle must be registered');
   assert.ok(commands['win7Agent.toggleShellConfirm'], 'shell-confirmation toggle must be registered');
@@ -349,7 +356,7 @@ async function main() {
   });
   assert.ok(commands['win7Agent.manageLessons'], 'auto-lesson manager command must be registered');
   assert.ok(commands['win7Agent.switchProfile'], 'model-profile switcher command must be registered (v1.11.4)');
-  console.log('  PASS  activate() registered 22 commands and the webview provider');
+  console.log('  PASS  activate() registered 25 commands and the webview provider');
   
 
   const runtime = require('../src/runtime');
@@ -409,10 +416,26 @@ async function main() {
   console.log('  PASS  defaults: local GGUF model, 1000 s timeout, read-only, shell ON with confirm, no command whitelist');
   console.log('  PASS  empty whitelist allows any PowerShell/CMD command; non-empty still restricts');
 
+  /* 更新检查：地址填错时手动命令要当场说清楚（不联网，走的是解析失败分支）。
+   * 自动检查在测试里被关掉了（settings['win7Agent.checkUpdatesOnStartup']=false），
+   * 否则每次跑冒烟都会去请求 GitHub。 */
+  settings['win7Agent.updateRepo'] = 'not a repo';
+  lastWarningText = '';
+  const badSource = await commands['win7Agent.checkUpdate']();
+  assert.strictEqual(badSource, false, 'an unusable update source must not report success');
+  assert.ok(/更新源地址无法识别/.test(lastWarningText), 'the reason must be shown: ' + lastWarningText);
+
+  settings['win7Agent.updateRepo'] = '';
+  lastWarningText = '';
+  await commands['win7Agent.checkUpdate']();
+  assert.ok(/更新源地址为空/.test(lastWarningText), 'an empty source must say so: ' + lastWarningText);
+  settings['win7Agent.updateRepo'] = 'dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent';
+  console.log('  PASS  update check reports a bad or empty source instead of failing silently');
+
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.12.2');
+  assert.strictEqual(info.version, '1.12.3');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -640,7 +663,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.12.2');
+  assert.strictEqual(state.version, '1.12.3');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -753,6 +776,8 @@ async function main() {
     'the 13th model response must be delivered as the final answer');
   console.log('  PASS  12+ tool rounds keep the early context and finish normally');
   settings['win7Agent.maxToolRounds'] = 4;
+  /* 离线测试不能真的去请求 GitHub：关掉启动自动检查。 */
+  settings['win7Agent.checkUpdatesOnStartup'] = false;
 
   /* Sub-task mode: parent delegates, child runs in its own context, parent
    * must read the returned result before it can finish. v1.2.0: OFF by

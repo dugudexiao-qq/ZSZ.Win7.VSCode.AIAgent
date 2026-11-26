@@ -17,12 +17,15 @@ const endpoint = require('./src/endpoint');
 const settingsAudit = require('./src/settingsAudit');
 const rulePicker = require('./src/rulePicker');
 const schedulerLib = require('./src/scheduler');
+const updateCheck = require('./src/updateCheck');
 
 const APP = manifest.displayName;
 const EXT_ID = manifest.publisher + '.' + manifest.name;
 let provider = null;
 /* 定时任务只有一个计时器（见 armSchedules）；deactivate 时要清掉。 */
 let scheduleTimer = null;
+/* 启动后延迟一次的版本检查计时器；窗口关得早时也要清掉，别让宿主多留一个句柄。 */
+let updateTimer = null;
 /* 测试钩子：冒烟测试要真的排一次计时器并让它到点，否则「定时」只能靠读源码
  * 断言。只暴露排程函数，不暴露数据。 */
 const testHooks = { armSchedules: null, scheduleTick: null };
@@ -1215,6 +1218,130 @@ function activate(context) {
     })
   );
 
+  /* ---- 版本提醒（v1.12.3） ----
+   * 更新源可自定义：默认官方 GitHub 仓库；也可以填 owner/repo、别的 GitHub
+   * 仓库，或一个返回 JSON 的 https 地址（内网镜像自建 feed）。
+   * 自动检查一天一次、失败只写日志；手动「检查更新」不受节流与跳过限制。 */
+  const UPDATE_LAST_KEY = 'win7Agent.update.lastCheckAt';
+  const UPDATE_SKIP_KEY = 'win7Agent.update.skippedVersion';
+  const UPDATE_START_DELAY_MS = 5000;
+
+  function updateSettings() {
+    let c = null;
+    try { c = vscode.workspace.getConfiguration('win7Agent'); } catch (e) { c = null; }
+    const read = function (key, fallback) {
+      if (!c) { return fallback; }
+      let v;
+      try { v = c.get(key); } catch (e) { return fallback; }
+      return v === undefined || v === null ? fallback : v;
+    };
+    return {
+      repo: String(read('updateRepo', updateCheck.DEFAULT_REPO) || '').trim(),
+      enabled: read('checkUpdatesOnStartup', true) !== false
+    };
+  }
+
+  /* 只放行 http/https：更新源是用户填的，不能让一条 file:// 或 command: 链接
+   * 借着「查看更新」被执行。 */
+  function openReleasePage(url, target) {
+    let link = String(url || '').trim();
+    if (!/^https?:\/\//i.test(link)) {
+      link = target && target.kind === 'github'
+        ? 'https://github.com/' + target.owner + '/' + target.repo + '/releases/latest'
+        : (target && target.kind === 'feed' ? target.url : '');
+    }
+    if (!/^https?:\/\//i.test(link)) {
+      vscode.window.showWarningMessage(APP + '：更新源没有给出可打开的下载地址，请手动到更新源查看。');
+      return Promise.resolve(false);
+    }
+    return Promise.resolve(vscode.env.openExternal(vscode.Uri.parse(link))).then(function () { return true; });
+  }
+
+  async function checkForUpdates(opts) {
+    const manual = Boolean(opts && opts.manual);
+    const cfg = updateSettings();
+    const gs = context.globalState;
+    const last = Number(gs.get(UPDATE_LAST_KEY, 0)) || 0;
+    if (!updateCheck.shouldCheck({ manual: manual, enabled: cfg.enabled, lastCheckAt: last })) {
+      return false;
+    }
+    if (!cfg.repo) {
+      if (manual) {
+        vscode.window.showWarningMessage(APP + '：更新源地址为空。可以在设置里把 win7Agent.updateRepo ' +
+          '填成 owner/repo 或一个返回 JSON 的 https 地址（留空=不检查）。');
+      }
+      runtime.log('update check skipped: win7Agent.updateRepo is empty');
+      return false;
+    }
+
+    const result = await updateCheck.checkLatest(cfg.repo);
+    await gs.update(UPDATE_LAST_KEY, Date.now());
+    if (!result.ok) {
+      runtime.log('update check failed (' + cfg.repo + '): ' + result.error);
+      if (manual) {
+        vscode.window.showWarningMessage(APP + '：检查更新失败 — ' + result.error);
+      }
+      return false;
+    }
+
+    const current = runtime.getExtensionInfo().version;
+    const latest = result.latest;
+    if (!updateCheck.isNewer(latest.version, current)) {
+      runtime.log('update check: v' + current + ' is the latest from ' + result.target.label);
+      if (manual) {
+        vscode.window.showInformationMessage(APP + '：已是最新版本 v' + current +
+          '（更新源：' + result.target.label + '）');
+      }
+      return false;
+    }
+
+    const skipped = String(gs.get(UPDATE_SKIP_KEY, '') || '');
+    const notify = manual || updateCheck.shouldNotify(latest.version, current, skipped);
+    runtime.log('update available: v' + latest.version + ' (current v' + current + ', source ' +
+      result.target.label + ')' + (notify ? '' : ', muted by skip/interval'));
+    if (!notify) { return false; }
+
+    const pick = await vscode.window.showInformationMessage(
+      APP + ' 有新版本 v' + latest.version + '（当前 v' + current + '）。更新源：' + result.target.label,
+      '查看更新',
+      '跳过此版本'
+    );
+    if (pick === '查看更新') {
+      await openReleasePage(latest.url, result.target);
+    } else if (pick === '跳过此版本') {
+      await gs.update(UPDATE_SKIP_KEY, latest.version);
+      runtime.log('update v' + latest.version + ' muted by the user');
+    }
+    return true;
+  }
+  testHooks.checkForUpdates = checkForUpdates;
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('win7Agent.checkUpdate', function () {
+      return checkForUpdates({ manual: true });
+    })
+  );
+
+  /* 换了更新源就把节流清零：否则用户改完要等一天才生效，会以为设置没作用。 */
+  if (typeof vscode.workspace.onDidChangeConfiguration === 'function') {
+    context.subscriptions.push(
+      vscode.workspace.onDidChangeConfiguration(function (e) {
+        if (!e || typeof e.affectsConfiguration !== 'function') { return; }
+        if (e.affectsConfiguration('win7Agent.updateRepo')) {
+          Promise.resolve(context.globalState.update(UPDATE_LAST_KEY, 0)).catch(function () {});
+        }
+      })
+    );
+  }
+
+  /* 延迟几秒再查：别和激活时的迁移、索引预热抢资源；失败不打扰用户。 */
+  updateTimer = setTimeout(function () {
+    updateTimer = null;
+    checkForUpdates({}).catch(function (e) {
+      runtime.log('update check crashed: ' + (e && e.message ? e.message : e));
+    });
+  }, UPDATE_START_DELAY_MS);
+
   /* 启动就把定时器排上：任务在 globalState 里，重载后照常生效。 */
   armSchedules();
   const pendingJobs = runtime.getSchedules().filter(function (j) { return j.enabled !== false; }).length;
@@ -1225,6 +1352,7 @@ function activate(context) {
 }
 
 function deactivate() {
+  if (updateTimer) { clearTimeout(updateTimer); updateTimer = null; }
   if (scheduleTimer) { clearTimeout(scheduleTimer); scheduleTimer = null; }
   if (provider) { provider.dispose(); }
 }

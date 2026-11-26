@@ -2,7 +2,7 @@
   "name": "win7-ai-agent",
   "displayName": "ZSZ.Win7.VSCode.AIAgent",
   "description": "适用于 Windows 7 + VS Code 1.70.x 的本地大模型 AI Agent。",
-  "version": "1.12.2",
+  "version": "1.12.3",
   "publisher": "dugudexiao",
   "icon": "media/icon.png",
   "author": {
@@ -63,7 +63,8 @@
     "onCommand:win7Agent.exportDiagnostics",
     "onCommand:win7Agent.auditSettings",
     "onCommand:win7Agent.scheduleTask",
-    "onCommand:win7Agent.manageSchedules"
+    "onCommand:win7Agent.manageSchedules",
+    "onCommand:win7Agent.checkUpdate"
   ],
   "contributes": {
     "commands": [
@@ -183,6 +184,11 @@
         "category": "ZSZ.Win7.VSCode.AIAgent"
       },
       {
+        "command": "win7Agent.checkUpdate",
+        "title": "检查更新（更新源可自定义）",
+        "category": "ZSZ.Win7.VSCode.AIAgent"
+      },
+      {
         "command": "win7Agent.manageSchedules",
         "title": "定时任务：管理 / 立即执行 / 暂停",
         "category": "ZSZ.Win7.VSCode.AIAgent"
@@ -219,6 +225,16 @@
       "type": "object",
       "title": "ZSZ.Win7.VSCode.AIAgent · 插件设置",
       "properties": {
+        "win7Agent.updateRepo": {
+          "type": "string",
+          "default": "dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent",
+          "description": "版本更新源。可填 `owner/repo`（走 GitHub Releases，官方仓是 dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent），也可以填一个返回 JSON 的 https 地址（内网镜像自建 feed，形如 https://内网/aiagent/latest.json，内容至少含 version 字段）。填成别的 GitHub 仓库（含 fork 与内网镜像）同样有效。留空=不检查更新。改完这一项后下次激活即生效。"
+        },
+        "win7Agent.checkUpdatesOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "启动后自动检查一次新版本（一天最多一次，失败只写日志不弹窗）。关掉之后仍可用命令「检查更新」手动查。"
+        },
         "win7Agent.baseUrl": {
           "type": "string",
           "default": "",
