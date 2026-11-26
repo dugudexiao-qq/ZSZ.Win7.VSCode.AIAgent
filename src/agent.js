@@ -943,6 +943,21 @@ async function runAgent(params) {
      * 宿主据此生成「撤回本轮改动」条目。 */
     snapshots: Array.isArray(params.snapshots) ? params.snapshots : []
   };
+  /* 顶栏记忆条要能实时动：工具结果、重试提示、工具调用的正文都会塞进这一轮
+   * 的上下文，但它们没有落进会话历史。把「本轮额外占用」按差值报给宿主
+   * （扣掉 system prompt 与已经计入 history 的 recent），面板据此推进进度，
+   * 而不是等到整轮结束才跳一格。 */
+  const baseConvoChars = systemPrompt.length + recent.chars;
+  function reportUsage() {
+    /* 子代理有自己的上下文，报上来只会把根代理的进度条打乱。 */
+    if (depth > 0) { return; }
+    let total = 0;
+    for (let i = 0; i < convo.length; i++) {
+      const m = convo[i];
+      if (m && typeof m.content === 'string') { total += m.content.length; }
+    }
+    emit({ type: 'usage', extraChars: Math.max(0, total - baseConvoChars), messages: convo.length });
+  }
 
   function phase(text) {
     emit({ type: 'phase', text: text, elapsedMs: Date.now() - startedAt });
@@ -975,6 +990,9 @@ async function runAgent(params) {
       }
       phase(round === 0 ? '请求已发送，等待模型响应（大模型首次加载可能数分钟）…'
         : '第 ' + round + ' 轮：工具结果已回填，继续推理…');
+      /* 上一轮可能因为模板/空回复/重试往 convo 里加了消息，逐轮报一次，
+       * 让进度条跟着走。 */
+      reportUsage();
 
       let content = '';
       try {
@@ -1214,6 +1232,7 @@ async function runAgent(params) {
       emit({ type: 'tool', text: pathUtils.truncate(result, 600), status: toolStatus, tool: call.tool });
       convo.push({ role: 'assistant', content: content });
       convo.push({ role: 'user', content: 'TOOL RESULT for ' + call.tool + ':\n' + pathUtils.truncateMiddle(result, MAX_RESULT_CHARS) });
+      reportUsage();
     }
 
     trace.exhausted = true;

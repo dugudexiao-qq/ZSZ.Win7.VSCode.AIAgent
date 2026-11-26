@@ -437,7 +437,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.12.7');
+  assert.strictEqual(info.version, '1.12.8');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -733,7 +733,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.12.7');
+  assert.strictEqual(state.version, '1.12.8');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -745,8 +745,16 @@ async function main() {
   assert.ok(mem.used > 0 && mem.messages > 0, 'a run has already happened, so memory must be in use');
   assert.strictEqual(mem.percent, Math.min(100, Math.round((mem.used / mem.limit) * 100)),
     'percent must be used/limit, not a free-form number');
-  assert.ok(mem.included <= mem.used && mem.includedMessages <= mem.messages,
+  assert.ok(mem.included <= mem.committed && mem.includedMessages <= mem.messages,
     'the included part can never exceed the whole history');
+  /* 一轮进行中要能看见「还没落库」的增量：工具结果 + 正在生成的回复。 */
+  registeredProvider._liveReply = 500;
+  registeredProvider._liveExtra = 1200;
+  const liveState = registeredProvider._memoryState();
+  assert.strictEqual(liveState.live, 1700, 'live = tool results + in-progress reply');
+  assert.strictEqual(liveState.used, liveState.committed + 1700, 'used must include the live part');
+  registeredProvider._liveReply = 0;
+  registeredProvider._liveExtra = 0;
   console.log('  PASS  webview state exposes author, app name, 1000 s timeout and rule count');
 
   events.length = 0;
@@ -769,6 +777,8 @@ async function main() {
   const phases = events.filter(function (e) { return e.type === 'phase'; });
   assert.ok(events.some(function (e) { return e.type === 'memory'; }),
     'a new user turn must refresh the memory bar right away, not only when the run ends');
+  assert.ok(events.some(function (e) { return e.type === 'usage' && typeof e.extraChars === 'number'; }),
+    'the agent must report in-flight context growth, so the bar moves while tools run');
   assert.ok(phases.length >= 2, 'the UI must receive visible phase updates');
   assert.ok(events.some(function (e) { return e.type === 'busy' && e.value === true; }), 'busy start must be emitted');
   assert.ok(events.some(function (e) { return e.type === 'busy' && e.value === false; }), 'busy end must be emitted');

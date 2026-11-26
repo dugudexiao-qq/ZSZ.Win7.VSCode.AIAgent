@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.12.7-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.12.8-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -22,7 +22,7 @@
 
 - 长期要求：一句话永久生效（如「注释用中文」），存 globalState
 - 自动经验：工具报错被修好后自动总结成经验并注入后续提示词，可逐条删除
-- **记忆容量条**：对话顶端常驻一条进度条，随时告诉你「AI 还能记住多少前文」——占用到 80% 变黄，开始丢弃旧消息时变红并写明「更早的 N 条已不再参与」
+- **记忆容量条**：对话顶端常驻一条进度条，随时告诉你「AI 还能记住多少前文」——**回复过程中实时增长**（工具结果、正在生成的正文都算），占用到 80% 变黄，开始丢弃旧消息时变红并写明「更早的 N 条已不再参与」
 - 自动上下文压缩：历史超限时旧对话自动摘要成一条，长任务不再「忘记」开头（压缩后进度条会当场回落）
 - 多模型配置（profiles）：多套「地址 + 模型 + Key」命名保存，菜单一键切换
 - 工作区文件清单随提示词提供；支持项目根目录 **AGENTS.md** 注入
@@ -47,9 +47,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.12.7** 的附件 `zsz-win7-vscode-aiagent-1.12.7.vsix`（约 200 KB）
-   （直链：[Releases/download/v1.12.7](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.12.7/zsz-win7-vscode-aiagent-1.12.7.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.12.7.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.12.8** 的附件 `zsz-win7-vscode-aiagent-1.12.8.vsix`（约 200 KB）
+   （直链：[Releases/download/v1.12.8](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.12.8/zsz-win7-vscode-aiagent-1.12.8.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.12.8.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)：[发行版页](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases) 与 GitHub 逐版对应（每个版本都带 `.vsix` 附件），也可以在文件页的 `dist/` 里下最新一版。
@@ -69,7 +69,7 @@
 
 ## 使用要点
 
-- **记忆容量条**（标题栏与对话之间）：`记忆 43% · 12 万 / 28 万`，悬停可看字符数、消息条数、本轮实际送入几条、被丢掉的条数，以及是哪项设置决定上限
+- **记忆容量条**（标题栏与对话之间）：`记忆 43% · 12 万 / 28 万`，回复中会显示「生成中」并实时走字；悬停可看字符数、消息条数、本轮实际送入几条、被丢掉的条数，以及是哪项设置决定上限
 - **4 个运行开关**（标题栏下方）：写入（只读/可写）、写入确认、命令确认、子任务
 - **下拉菜单**：清空对话、API Key、长期要求（点开后在输入框里直接写，回车即记住）、经验记忆、模型配置、新面板打开、服务地址
 - **多会话**：底部「切换对话 ▾」新建/切换/删除对话，各自独立上下文
@@ -162,6 +162,7 @@ feed 的内容很宽松，认这三种形态之一即可：
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.12.8**：记忆条改成**真正实时**。原来只在一轮开始与结束时各刷一次，回复过程中一直不动——因为工具结果和流式正文都在临时上下文里，还没写进会话历史。现在 agent 每轮把「本轮额外占用」（工具结果、重试提示等）报给面板，前端按 delta 累计正在生成的正文，250ms 节流刷新，条会随着这一轮变长；文字加「生成中」，悬停说明其中多少字符尚未落库。失败或结束时清零，回到真实占用。
 - **v1.12.7**：新增**记忆容量条**。对话顶端常驻一条细进度条，显示当前会话的上下文占用（字符数 / 预算 + 百分比），悬停可看消息条数、本轮实际送入几条、被丢弃几条。占用 80% 变黄，开始丢旧消息或到 100% 变红并写明「更早的 N 条已不再参与」，自动压缩生效后会当场回落——不用等 AI 答非所问才发现它把开头忘了。容量按 `maxContextChars` / `maxHistoryMessages` 计算，与实际送入模型的裁剪逻辑同源。
 - **v1.12.6**：修「模型把工具调用当成正文打印出来」。DeepSeek V3.2 把调用分隔符换成了 `｜｟DSML｠｜`（全角竖线 + U+FF5F/FF60），旧解析只认 `｜｜DSML｜｜`，整段 `<invoke name="readFile">…` 认不出来，就被当成最终回答显示给用户，任务还标了「已完成」。现在先把 `｟｠` 折成竖线再按老形态归一，正常调用直接执行；只剩外层标签、拿不到工具名的畸形输出也会被判为坏模板并要求模型重发，不再漏进聊天区。
 - **v1.12.5**：三处交互修正。① **「定时」从菜单搬到发送按钮旁**，输入框上方写好任务、点一下就能排时间，不用先翻「···」菜单；② **发送按钮不再改名**：正在回复时它原来会变成「排队」，看着像另一个功能，现在始终是 `Send`，悬停才提示「点击会排到这一轮结束之后发送」；③ **修「关掉 VS Code 再打开，刚才的对话不见了」**：面板刚挂载时那份历史重放常常赶在页面脚本注册监听之前，就此丢掉，之后没有任何补发——现在 webview 报 `ready` 后会再定向重放一次（正在跑的那一轮除外，免得清掉流式输出）。

@@ -51,6 +51,12 @@ class ChatViewProvider {
     this._fixMaps = Object.create(null);
     this._cts = null;
     this._busy = false;
+    /* 本轮尚未落进历史的占用：工具结果（宿主从 agent 的 usage 事件得知）与
+     * 正在流式生成的回复（按 delta 累加）。进度条要「实时动」，靠的就是这两项；
+     * 否则一轮里只在发送和结束各跳一次。 */
+    this._liveExtra = 0;
+    this._liveReply = 0;
+    this._memoryTimer = null;
     /* 定时任务撞上正在回复时的等待队列：宿主侧排队，这一轮结束立刻接着跑。
      * 前端那条队列是「用户手动打的字」，两者互不干扰。 */
     this._autoPending = [];
@@ -398,9 +404,15 @@ class ChatViewProvider {
     const limit = contextCharLimit(config);
     const msgLimit = historyLimit(config);
     const recent = takeRecent(history, msgLimit, limit);
-    const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+    /* 这一轮还在跑：工具结果与流式输出已经占着上下文，但还没 push 进 history。
+     * 不把它们算进来，进度条就会「一轮只动两次」，看着像坏了。 */
+    const live = Math.max(0, (Number(this._liveExtra) || 0) + (Number(this._liveReply) || 0));
+    const total = used + live;
+    const percent = limit > 0 ? Math.min(100, Math.round((total / limit) * 100)) : 0;
     return {
-      used: used,
+      used: total,
+      committed: used,
+      live: live,
       limit: limit,
       percent: percent,
       included: recent.chars,
@@ -415,6 +427,41 @@ class ChatViewProvider {
   /* 每次 push 历史后只推这一条，不必整套 postState（那要读 Key、拼会话列表）。 */
   postMemory() {
     this._post({ type: 'memory', memory: this._memoryState() }, false);
+  }
+
+  /* 流式输出时 delta 来得很快（每几十毫秒一条）：限流 250ms 推一次，既看得见
+   * 条在走，也不至于把 message 通道灌满。 */
+  _scheduleMemory() {
+    if (this._memoryTimer) { return; }
+    this._memoryTimer = setTimeout(() => {
+      this._memoryTimer = null;
+      this.postMemory();
+    }, 250);
+  }
+
+  /* 本轮上下文增长的两个来源：agent 报的 usage（工具结果等临时消息）、
+   * 尚未写完的回复正文（delta 累计）。run 结束时清零，改用落库后的真实值。 */
+  _trackMemory(evt) {
+    if (!evt || !evt.type) { return; }
+    if (evt.type === 'usage') {
+      this._liveExtra = Math.max(0, Number(evt.extraChars) || 0);
+      this._scheduleMemory();
+      return;
+    }
+    if (evt.type === 'delta') {
+      this._liveReply += String(evt.text || '').length;
+      this._scheduleMemory();
+      return;
+    }
+    /* 新一轮（或另一段回答）从零开始计回复长度，避免上段正文重复计算。 */
+    if (evt.type === 'start') {
+      this._liveReply = 0;
+      return;
+    }
+    if (evt.type === 'busy' && evt.value === false) {
+      this._liveExtra = 0;
+      this._liveReply = 0;
+    }
   }
 
   async postState() {
@@ -796,6 +843,8 @@ class ChatViewProvider {
     this._history.push(userTurn);
     this._touchSessionTitle(text);
     /* 用户这一条已经进历史了，记忆条立刻反映（不必等整轮结束）。 */
+    this._liveExtra = 0;
+    this._liveReply = 0;
     this.postMemory();
     /* 引入的文件已经在历史里，标签到此为止（「回答结束后还留在输入框」）。 */
     this._consumeAttachments();
@@ -850,7 +899,10 @@ class ChatViewProvider {
             repeated: Boolean(saved.repeated)
           }, false);
         },
-        onEvent: (evt) => { this._post(evt, false); },
+        onEvent: (evt) => {
+          this._trackMemory(evt);
+          this._post(evt, false);
+        },
         snapshots: snap
       });
       this._history.push({ role: 'assistant', content: reply });
@@ -874,6 +926,11 @@ class ChatViewProvider {
       if (this._cts) { this._cts.dispose(); }
       this._cts = null;
       this._busy = false;
+      /* 本轮结束：临时占用要么已经落进 history（assistant 回复），要么被丢弃
+       * （失败的中途工具结果），继续挂在进度条上就是虚高。 */
+      if (this._memoryTimer) { clearTimeout(this._memoryTimer); this._memoryTimer = null; }
+      this._liveExtra = 0;
+      this._liveReply = 0;
       // The webview starts the next queued item on 'done', so clear the host
       // guard first to avoid a fast round-trip being rejected as "busy".
       this._post({ type: 'done' }, false);

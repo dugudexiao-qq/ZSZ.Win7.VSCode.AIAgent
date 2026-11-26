@@ -241,6 +241,7 @@
     var limit = Number(mem.limit) || 0;
     var msgs = Number(mem.messages) || 0;
     var dropped = Number(mem.dropped) || 0;
+    var live = Number(mem.live) || 0;
     memFill.style.width = pct + '%';
     memBar.setAttribute('aria-valuenow', String(pct));
     var full = dropped > 0 || pct >= 100;
@@ -248,14 +249,20 @@
     memBar.className = 'membar' + (full ? ' full' : (warn ? ' warn' : ''));
 
     var label = '记忆 ' + pct + '%';
-    if (msgs === 0) { label = '记忆 0%（新对话）'; }
+    if (msgs === 0 && !live) { label = '记忆 0%（新对话）'; }
     else if (full) { label = '记忆已满 ' + pct + '%'; }
-    else { label += ' · ' + fmtChars(used) + ' / ' + fmtChars(limit); }
+    else {
+      label += ' · ' + fmtChars(used) + ' / ' + fmtChars(limit);
+      if (live) { label += ' · 生成中'; }
+    }
     memText.textContent = label;
 
     var title = '上下文记忆：' + used + ' / ' + limit + ' 字符（' + pct + '%），共 ' + msgs +
       ' 条消息；本轮会送入最近 ' + (Number(mem.includedMessages) || 0) + ' 条（' +
       (Number(mem.included) || 0) + ' 字符）。';
+    if (live) {
+      title += '其中 ' + live + ' 字符是本轮进行中的临时内容（工具结果 / 正在生成的回复），尚未写入历史。';
+    }
     if (dropped > 0) {
       title += '更早的 ' + dropped + ' 条已不再参与——AI 会忘掉那部分内容。';
     }

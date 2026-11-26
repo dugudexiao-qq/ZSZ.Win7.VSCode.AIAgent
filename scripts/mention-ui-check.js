@@ -511,6 +511,13 @@ check('the memory bar shows how much of the context budget is used', function ()
   assert.ok(/记忆已满/.test(els.memtext.textContent), 'the label must say it in words: ' + els.memtext.textContent);
   assert.ok(/更早的 12 条/.test(els.membar.title), 'the tooltip must say how many turns no longer reach the model');
 
+  /* 一轮进行中：工具结果与正在生成的回复已经占着上下文，但还没落库。
+   * 条要看得见这部分在长，否则用户会觉得「一整轮都不动」。 */
+  hostMessage({ type: 'memory', memory: { used: 123000, committed: 120000, live: 3000, limit: 280000, percent: 44, messages: 12, dropped: 0 } });
+  assert.ok(/生成中/.test(els.memtext.textContent), 'an in-flight turn must be marked as such: ' + els.memtext.textContent);
+  assert.strictEqual(els.memfill.style.width, '44%', 'the bar must include the in-flight characters');
+  assert.ok(/3000 字符是本轮进行中/.test(els.membar.title), 'the tooltip must explain the live part: ' + els.membar.title);
+
   /* 空对话不该显示成「快满了」。 */
   hostMessage({ type: 'memory', memory: { used: 0, limit: 280000, percent: 0, messages: 0, dropped: 0 } });
   assert.strictEqual(els.memfill.style.width, '0%');
