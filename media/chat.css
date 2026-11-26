@@ -213,23 +213,6 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
 .membar.warn .membar-text { color: var(--vscode-editorWarning-foreground, #cca700); }
 .membar.full .membar-fill { background: var(--vscode-errorForeground, #f14c4c); }
 .membar.full .membar-text { color: var(--vscode-errorForeground, #f14c4c); }
-/* 「推荐预算」按钮：和顶部开关同一套长相（透明底 + 细边框），不抢记忆条的
- * 注意力；只有偏离推荐值 20% 以上才由脚本解除 hidden。 */
-.membar-rec {
-  flex: 0 0 auto;
-  padding: 0 6px;
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--vscode-textLink-foreground, var(--vscode-foreground));
-  background: transparent;
-  border: 1px solid var(--vscode-panel-border, transparent);
-  border-radius: 3px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.membar-rec:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2)); }
-.membar-rec[hidden] { display: none; }
-
 #messages {
   flex: 1;
   overflow-y: auto;

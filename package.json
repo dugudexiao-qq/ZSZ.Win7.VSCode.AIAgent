@@ -269,7 +269,7 @@
           "default": 8000,
           "minimum": 2000,
           "maximum": 200000,
-          "description": "上下文总字符预算（默认 8000）。历史消息按这个预算从最新往前裁剪，最新的用户消息永不裁掉。不确定就交给推荐：面板顶端的记忆条会按 win7Agent.model 推断上下文窗口并显示「推荐 N」按钮（8k 模型约 6000，32k 约 22000，128k 约 9 万），点一下同时写好本项与 maxHistoryMessages。"
+          "description": "上下文总字符预算（默认 8000）。历史消息按这个预算从最新往前裁剪，最新的用户消息永不裁掉。改到这里（或换 win7Agent.model）时会按模型窗口给一次推荐（8k 约 6000，32k 约 23000，128k 约 9 万），偏离 20% 以上才提醒，可直接选「设为推荐值」同时写好本项与 maxHistoryMessages；同一组合只提醒一次。"
         },
         "win7Agent.preferShell": {
           "type": "string",

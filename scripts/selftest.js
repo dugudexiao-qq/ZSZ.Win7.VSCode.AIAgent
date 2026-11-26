@@ -781,6 +781,19 @@ try {
     assert.ok(modelWindow.recommendContext('phi-3-mini').chars <= 4000, 'a 4k model must get a small budget');
     assert.strictEqual(modelWindow.needsAdjust(8000, 90000), true);
     assert.strictEqual(modelWindow.needsAdjust(85000, 90000), false, 'within 20% needs no nagging');
+    assert.strictEqual(modelWindow.windowLabel(32768), '32k');
+    assert.strictEqual(modelWindow.windowLabel(128000), '128k');
+    assert.strictEqual(modelWindow.windowLabel(4096), '4k');
+
+    /* 提醒只在真的不匹配时出现，同一组合只出现一次。 */
+    const cfg = { model: 'deepseek-chat', maxContextChars: 8000, maxHistoryMessages: 100 };
+    const adv = modelWindow.advisoryFor(cfg, '');
+    assert.ok(adv && adv.rec.chars === 90000, 'a default budget under a 128k model must be flagged');
+    assert.strictEqual(modelWindow.advisoryFor(cfg, adv.key), null, 'the same model + budget must not nag twice');
+    assert.strictEqual(modelWindow.advisoryFor({ model: 'deepseek-chat', maxContextChars: 90000, maxHistoryMessages: 500 }, ''), null,
+      'a matching budget needs no reminder');
+    assert.strictEqual(modelWindow.advisoryFor({ model: 'my-own-model', maxContextChars: 1000, maxHistoryMessages: 10 }, ''), null,
+      'an unknown model gets no advice at all');
   });
 
   check('auto retry only for "talked but did nothing" verdicts', function () {

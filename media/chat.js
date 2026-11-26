@@ -20,7 +20,6 @@
   var memBar = document.getElementById('membar');
   var memFill = document.getElementById('memfill');
   var memText = document.getElementById('memtext');
-  var memRec = document.getElementById('memrec');
   var authorBtn = document.getElementById('author');
   var rulesBtn = document.getElementById('rules');
   var lessonsBtn = document.getElementById('lessons');
@@ -275,26 +274,6 @@
       (Number(mem.messageLimit) || 0) + '）决定。';
     memBar.title = title;
 
-    /* 按当前模型给的推荐值。只在偏离 20% 以上时才亮出来，平时不占地方；
-     * rec 为空说明模型名没认出来，这时不给数字，免得误导。 */
-    if (memRec) {
-      var rec = mem.rec;
-      if (rec && rec.chars) {
-        memRec.hidden = !rec.suggest;
-        if (rec.suggest) {
-          memRec.textContent = '推荐 ' + fmtChars(rec.chars);
-          memRec.title = '当前模型 ' + (Number(rec.tokens) ? Math.round(rec.tokens / 1000) + 'k 窗口' : '') +
-            ' 建议上下文预算 ' + rec.chars + ' 字符 / ' + rec.messages + ' 条历史（' + rec.note +
-            '）。点击立即套用到设置。';
-        }
-        memBar.title = title + '按当前模型推荐 ' + rec.chars + ' 字符 / ' + rec.messages + ' 条（' +
-          rec.note + '）。';
-      } else {
-        memRec.hidden = true;
-        memBar.title = title + '模型名未识别（win7Agent.model 为空或不在已知族系里），' +
-          '无法按模型推荐预算，请按模型说明手动设置 maxContextChars。';
-      }
-    }
   }
 
   /* 定时任务的时间戳在历史里是毫秒数，显示成 02:00 就够。 */
@@ -950,13 +929,6 @@
   exportBtn.addEventListener('click', function () { vscode.postMessage({ type: 'export' }); });
   settingsBtn.addEventListener('click', function () { vscode.postMessage({ type: 'settings' }); });
   endpointBtn.addEventListener('click', function () { vscode.postMessage({ type: 'endpoint' }); });
-  if (memRec) {
-    /* 一键套用推荐预算：写设置由宿主做，前端不碰配置。 */
-    memRec.addEventListener('click', function (e) {
-      if (e && e.stopPropagation) { e.stopPropagation(); }
-      vscode.postMessage({ type: 'applyContextLimit' });
-    });
-  }
   keyState.addEventListener('click', function () {
     // 没配 key 时这个徽标就是唯一显眼的入口：直接弹设置框，而不是先诊断再让人去菜单找。
     vscode.postMessage({ type: keyPresent ? 'diagnose' : 'setKey' });

@@ -27,6 +27,9 @@ let registeredProvider = null;
 let viewMessageHandler = null;
 /* 配置变更监听：设置页里改模型/地址后，面板徽章要靠它重推状态。 */
 let configChangeHandler = null;
+/* 设置提醒相关的桩：弹过的文案 + 下一次弹窗用户会点哪个按钮。 */
+const infoMessages = [];
+let nextInfoAnswer;
 let firstSystemPrompt = '';
 let lastToolResult = '';
 let lastMessages = [];
@@ -132,7 +135,12 @@ const vscodeStub = {
         dispose: function () {}
       };
     },
-    showInformationMessage: function () { return Promise.resolve(undefined); },
+    showInformationMessage: function (text) {
+      infoMessages.push(String(text || ''));
+      const answer = nextInfoAnswer;
+      nextInfoAnswer = undefined;
+      return Promise.resolve(answer);
+    },
     showErrorMessage: function () { return Promise.resolve(undefined); },
     showWarningMessage: async function (text) {
       lastWarningText = String(text || '');
@@ -498,8 +506,6 @@ async function main() {
    * 藏进菜单或放在滚动区里都看不见。 */
   assert.ok(/id="membar"[\s\S]*id="memfill"[\s\S]*id="messages"/.test(view.webview.html),
     'the memory bar must sit between the header and the transcript');
-  assert.ok(/id="membar"[\s\S]*id="memrec"[\s\S]*id="messages"/.test(view.webview.html),
-    'the recommended-budget button must live inside the memory bar, not in a menu');
   assert.ok(rowHtml.indexOf('id="keybtn"') === -1, 'Set key must not sit among the composer buttons any more');
   assert.ok(rowHtml.indexOf('id="newchat"') === -1,
     'the separate new-chat button must be gone (new chat lives at the top of the session list)');
@@ -757,25 +763,53 @@ async function main() {
   assert.strictEqual(liveState.used, liveState.committed + 1700, 'used must include the live part');
   registeredProvider._liveReply = 0;
   registeredProvider._liveExtra = 0;
-  /* v1.13.0：按当前模型给推荐预算。qwen3.8-… 是本地 GGUF，按 32k 窗口算，
-   * 推荐 23000 字符 / 290 条；默认的 8000/100 明显偏小，必须提示。 */
-  assert.ok(mem.rec && mem.rec.chars === 23000,
-    'a recognised model must carry a recommended budget: ' + JSON.stringify(mem.rec));
-  assert.strictEqual(mem.rec.suggest, true,
-    '8000 chars / 100 messages is far below what a 32k model can hold, so the UI must offer it');
-  const prevChars = settings['win7Agent.maxContextChars'];
-  const prevMsgs = settings['win7Agent.maxHistoryMessages'];
+  /* v1.13.0：上下文预算不是常用选项，界面上不放按钮；只在动设置或换模型时
+   * 提醒一次，且同一组「模型 + 当前值」不重复打扰。 */
+  assert.ok(view.webview.html.indexOf('memrec') === -1,
+    'the panel must not carry a context-budget button');
+  const keepChars = settings['win7Agent.maxContextChars'];
+  const keepMsgs = settings['win7Agent.maxHistoryMessages'];
   settings['win7Agent.maxContextChars'] = 8000;
   settings['win7Agent.maxHistoryMessages'] = 100;
-  await viewMessageHandler({ type: 'applyContextLimit' });
+  const advMark = infoMessages.length;
+  configChangeHandler({ affectsConfiguration: function (k) { return k === 'win7Agent.maxContextChars'; } });
+  await new Promise(function (r) { setTimeout(r, 30); });
+  const advText = infoMessages.slice(advMark).filter(function (m) { return /建议预算/.test(m); })[0];
+  assert.ok(advText, 'changing the budget must trigger one advisory: ' +
+    JSON.stringify(infoMessages.slice(advMark)));
+  assert.ok(/23000/.test(advText) && /290/.test(advText),
+    'the advisory must carry both recommended numbers: ' + advText);
+  assert.ok(/32k/.test(advText), 'and the window it came from, so the number is checkable: ' + advText);
+
+  /* 弹窗被关掉（undefined）也算「保留当前」：同样的值不再弹第二次。 */
+  const againMark = infoMessages.length;
+  configChangeHandler({ affectsConfiguration: function (k) { return k === 'win7Agent.maxContextChars'; } });
+  await new Promise(function (r) { setTimeout(r, 30); });
+  assert.ok(!infoMessages.slice(againMark).some(function (m) { return /建议预算/.test(m); }),
+    'the same model + budget combination must not nag twice');
+
+  /* 选「设为推荐值」才写设置，且两条一起写。 */
+  nextInfoAnswer = '设为推荐值';
+  settings['win7Agent.maxContextChars'] = 12000;
+  configChangeHandler({ affectsConfiguration: function (k) { return k === 'win7Agent.maxContextChars'; } });
+  await new Promise(function (r) { setTimeout(r, 30); });
   assert.strictEqual(settings['win7Agent.maxContextChars'], 23000,
-    'applying the recommendation must write the character budget');
+    'choosing the recommendation must write the character budget');
   assert.strictEqual(settings['win7Agent.maxHistoryMessages'], 290,
-    'and the message cap too, or the old 100 still cuts first');
+    'and the message cap, or the stale 100 still cuts first');
+
+  /* 无关设置不弹：开关、超时跟预算没关系。 */
+  const quietMark = infoMessages.length;
+  settings['win7Agent.maxContextChars'] = 7000;
+  configChangeHandler({ affectsConfiguration: function (k) { return k === 'win7Agent.stream'; } });
+  await new Promise(function (r) { setTimeout(r, 30); });
+  assert.ok(!infoMessages.slice(quietMark).some(function (m) { return /建议预算/.test(m); }),
+    'unrelated settings must never trigger the budget advisory');
+
+  if (keepChars === undefined) { delete settings['win7Agent.maxContextChars']; } else { settings['win7Agent.maxContextChars'] = keepChars; }
+  if (keepMsgs === undefined) { delete settings['win7Agent.maxHistoryMessages']; } else { settings['win7Agent.maxHistoryMessages'] = keepMsgs; }
   delete scoped.global['win7Agent.maxContextChars'];
   delete scoped.global['win7Agent.maxHistoryMessages'];
-  if (prevChars === undefined) { delete settings['win7Agent.maxContextChars']; } else { settings['win7Agent.maxContextChars'] = prevChars; }
-  if (prevMsgs === undefined) { delete settings['win7Agent.maxHistoryMessages']; } else { settings['win7Agent.maxHistoryMessages'] = prevMsgs; }
   console.log('  PASS  webview state exposes author, app name, 1000 s timeout and rule count');
 
   events.length = 0;

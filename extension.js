@@ -18,8 +18,11 @@ const settingsAudit = require('./src/settingsAudit');
 const rulePicker = require('./src/rulePicker');
 const schedulerLib = require('./src/scheduler');
 const updateCheck = require('./src/updateCheck');
+const modelWindow = require('./src/modelWindow');
 
 const APP = manifest.displayName;
+/* 已经提醒过的「模型 + 预算」组合，避免重复打扰。 */
+const CONTEXT_ADVISORY_KEY = 'win7Agent.contextAdvisory';
 const EXT_ID = manifest.publisher + '.' + manifest.name;
 let provider = null;
 /* 定时任务只有一个计时器（见 armSchedules）；deactivate 时要清掉。 */
@@ -148,6 +151,42 @@ function activate(context) {
 
   provider = new ChatViewProvider(context.extensionUri);
   function refresh() { return provider.postState(); }
+
+  /* ---- 上下文预算：改设置时提醒一次 ----
+   * 历史预算不是常用选项，不该在对话界面里常驻一个「推荐」按钮。改成只在
+   * 用户真的动 maxContextChars / maxHistoryMessages，或者换了模型时给一句
+   * 提醒：偏离推荐值 20% 以上才说，同一组「模型 + 当前值」只说一次——选过
+   * 「保留当前」就记住，下次不再打扰。 */
+  async function adviseContextBudget() {
+    const config = runtime.getConfig();
+    let seen = '';
+    try { seen = context.globalState.get(CONTEXT_ADVISORY_KEY, ''); } catch (e) { seen = ''; }
+    const adv = modelWindow.advisoryFor(config, seen);
+    if (!adv) { return false; }
+    const windowLabel = modelWindow.windowLabel(adv.rec.tokens);
+    const pick = await vscode.window.showInformationMessage(
+      '当前模型「' + (config.model || '未命名') + '」按 ' + windowLabel + ' 上下文窗口建议预算 ' +
+      adv.rec.chars + ' 字符 / ' + adv.rec.messages + ' 条历史，现在是 ' +
+      adv.current.chars + ' / ' + adv.current.messages + '。',
+      '设为推荐值',
+      '保留当前'
+    );
+    if (pick === '设为推荐值') {
+      const cfg = vscode.workspace.getConfiguration('win7Agent');
+      const target = runtime.settingTarget(cfg, 'maxContextChars');
+      await cfg.update('maxContextChars', adv.rec.chars, target);
+      await cfg.update('maxHistoryMessages', adv.rec.messages, target);
+      await context.globalState.update(CONTEXT_ADVISORY_KEY, '');
+      await refresh();
+      runtime.log('context budget set to the recommendation: ' + adv.rec.chars + ' chars / ' +
+        adv.rec.messages + ' messages');
+      return true;
+    }
+    /* 直接关掉弹窗（undefined）也算「保留当前」，不然每次改设置都会再弹。 */
+    await context.globalState.update(CONTEXT_ADVISORY_KEY, adv.key);
+    return false;
+  }
+  testHooks.adviseContextBudget = adviseContextBudget;
 
   /* 换文件夹 / 多根工作区增删后，@ 的文件清单必须重算。 */
   context.subscriptions.push(
@@ -1338,6 +1377,16 @@ function activate(context) {
           Promise.resolve(refresh()).catch(function (err) {
             runtime.log('state refresh after settings change failed: ' +
               (err && err.message ? err.message : err));
+          });
+        }
+        /* 只有「动到预算」或「换模型」才谈推荐值：其他设置变更（开关、颜色、
+         * 超时）和这件事无关，不能顺手弹窗。 */
+        const budgetTouched = e.affectsConfiguration('win7Agent.maxContextChars') ||
+          e.affectsConfiguration('win7Agent.maxHistoryMessages') ||
+          e.affectsConfiguration('win7Agent.model');
+        if (budgetTouched) {
+          adviseContextBudget().catch(function (err) {
+            runtime.log('context budget advisory failed: ' + (err && err.message ? err.message : err));
           });
         }
       })

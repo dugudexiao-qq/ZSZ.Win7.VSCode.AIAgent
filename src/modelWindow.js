@@ -86,6 +86,15 @@ function inferWindow(model) {
   return null;
 }
 
+/* 人话里的窗口大小：32768 是 32k 而不是 33k；128000 是 128k 而不是 125k
+ * （所以只在 2 的幂时按 1024 折算，其余按 1000）。100 万直接写 1M。 */
+function windowLabel(tokens) {
+  const n = Number(tokens) || 0;
+  if (n >= 1000000) { return Math.round(n / 100000) / 10 + 'M'; }
+  if (n > 0 && (n & (n - 1)) === 0) { return (n / 1024) + 'k'; }
+  return Math.round(n / 1000) + 'k';
+}
+
 function clampChars(n) {
   const v = Math.round(Number(n) / 1000) * 1000;
   if (!Number.isFinite(v)) { return MIN_CHARS; }
@@ -106,7 +115,7 @@ function recommendContext(model) {
     tokens: hit.tokens,
     chars: chars,
     messages: messages,
-    note: '按 ' + Math.round(hit.tokens / 1000) + 'k 上下文窗口估算，留 30% 给系统提示、工具结果和回复'
+    note: '按 ' + windowLabel(hit.tokens) + ' 上下文窗口估算，留 30% 给系统提示、工具结果和回复'
   };
 }
 
@@ -119,6 +128,28 @@ function needsAdjust(current, target) {
   return Math.abs(cur - want) / want > 0.2;
 }
 
+/* ---- 设置时的提醒 ----
+ * 上下文预算不是常用选项，不该在对话界面里常驻一个按钮。改成在用户真的去
+ * 动设置（maxContextChars / maxHistoryMessages）或换模型时提醒一次：
+ * 偏离推荐值 20% 以上才说，同一组「模型 + 当前值」只提醒一次，选过
+ * 「保留当前」就不再啰嗦。 */
+function advisoryKey(config) {
+  const chars = Number(config && config.maxContextChars) || 0;
+  const msgs = Number(config && config.maxHistoryMessages) || 0;
+  return String((config && config.model) || '') + '|' + chars + '|' + msgs;
+}
+
+function advisoryFor(config, seen) {
+  const rec = recommendContext(config && config.model);
+  if (!rec) { return null; }
+  const chars = Number(config && config.maxContextChars) || 0;
+  const msgs = Number(config && config.maxHistoryMessages) || 0;
+  if (!needsAdjust(chars, rec.chars) && !needsAdjust(msgs, rec.messages)) { return null; }
+  const key = advisoryKey(config);
+  if (seen && seen === key) { return null; }
+  return { key: key, rec: rec, current: { chars: chars, messages: msgs } };
+}
+
 module.exports = {
   RULES,
   MIN_CHARS,
@@ -126,5 +157,8 @@ module.exports = {
   HISTORY_SHARE,
   inferWindow,
   recommendContext,
-  needsAdjust
+  needsAdjust,
+  windowLabel,
+  advisoryKey,
+  advisoryFor
 };
