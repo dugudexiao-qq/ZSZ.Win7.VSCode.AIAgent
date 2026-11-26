@@ -767,6 +767,9 @@ async function main() {
    * 提醒一次，且同一组「模型 + 当前值」不重复打扰。 */
   assert.ok(view.webview.html.indexOf('memrec') === -1,
     'the panel must not carry a context-budget button');
+  /* 设置界面逐位输入数字会连发多次配置变更：提醒必须防抖，测试里把延迟
+   * 调成 0，行为不变但不用真等 1.2 秒。 */
+  ext.testHooks.contextAdvisoryDelayMs = 0;
   const keepChars = settings['win7Agent.maxContextChars'];
   const keepMsgs = settings['win7Agent.maxHistoryMessages'];
   settings['win7Agent.maxContextChars'] = 8000;
@@ -797,6 +800,16 @@ async function main() {
     'choosing the recommendation must write the character budget');
   assert.strictEqual(settings['win7Agent.maxHistoryMessages'], 290,
     'and the message cap, or the stale 100 still cuts first');
+
+  /* 连敲几位数字只合并成一次提醒（防抖），不能每敲一位就弹一次。 */
+  const burstMark = infoMessages.length;
+  settings['win7Agent.maxContextChars'] = 6000;
+  configChangeHandler({ affectsConfiguration: function (k) { return k === 'win7Agent.maxContextChars'; } });
+  settings['win7Agent.maxContextChars'] = 6500;
+  configChangeHandler({ affectsConfiguration: function (k) { return k === 'win7Agent.maxContextChars'; } });
+  await new Promise(function (r) { setTimeout(r, 30); });
+  assert.strictEqual(infoMessages.slice(burstMark).filter(function (m) { return /建议预算/.test(m); }).length, 1,
+    'a burst of keystrokes in the settings number box must collapse into one advisory');
 
   /* 无关设置不弹：开关、超时跟预算没关系。 */
   const quietMark = infoMessages.length;

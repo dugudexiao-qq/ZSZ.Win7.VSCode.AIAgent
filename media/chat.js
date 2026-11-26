@@ -256,6 +256,8 @@
       if (live) { label += ' · 生成中'; }
     }
     memText.textContent = label;
+    /* 读屏只报百分比意义不大，把「用了多少 / 上限多少」一起给它。 */
+    memBar.setAttribute('aria-valuetext', label);
 
     var title = '上下文记忆：' + used + ' / ' + limit + ' 字符（' + pct + '%），共 ' + msgs +
       ' 条消息；本轮会送入最近 ' + (Number(mem.includedMessages) || 0) + ' 条（' +

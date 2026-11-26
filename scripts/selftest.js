@@ -844,6 +844,35 @@ try {
     assert.strictEqual(mixed.visible, '答案');
   });
 
+  /* ---- v1.13.0 视觉打磨：简约 + 科技感，但不能引入 Win7 跑不动的特性 ---- */
+  check('chat UI polish: focus ring, quiet hovers, empty-state card, reduced motion', function () {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.css'), 'utf8');
+    assert.ok(/button:focus-visible/.test(css), 'keyboard users need a visible focus ring');
+    assert.ok(/#send:hover:not\(:disabled\)/.test(css) && /#schedbtn:hover:not\(:disabled\)/.test(css),
+      'composer buttons must share one quiet hover instead of turning solid blue');
+    const focus = /textarea:focus\s*\{([^}]*)\}/.exec(css);
+    assert.ok(focus && /box-shadow/.test(focus[1]), 'the input needs a soft focus halo, not the default outline');
+    assert.ok(/#messages:empty::before/.test(css), 'an empty conversation must explain what to do next');
+    assert.ok(/@media \(prefers-reduced-motion: reduce\)/.test(css), 'animations must respect the OS setting');
+    assert.ok(/::-webkit-scrollbar-thumb/.test(css), 'scrollbars must not look like stock Win32 chrome');
+    /* 渐变只做在记忆条上，黄色/红色警示仍然盖得住它。 */
+    assert.ok(/\.membar-fill\s*\{[^}]*linear-gradient/.test(css), 'the memory bar may use a gradient');
+    assert.ok(/\.membar\.warn \.membar-fill/.test(css) && /\.membar\.full \.membar-fill/.test(css),
+      'warning colours must still override the gradient');
+    /* Win7 上的老 Electron 没有这些特性，用了就是整块样式失效。 */
+    const noComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.ok(!/backdrop-filter\s*:/.test(noComments) && !/:has\(/.test(noComments),
+      'no CSS features the Win7 webview cannot parse');
+    /* 括号不配对的 CSS 会让后面的规则整段失效，且不会有人报错。 */
+    let depth = 0;
+    for (let i = 0; i < css.length; i++) {
+      if (css[i] === '{') { depth++; }
+      if (css[i] === '}') { depth--; }
+      assert.ok(depth >= 0, 'unbalanced braces near offset ' + i);
+    }
+    assert.strictEqual(depth, 0, 'every rule must be closed');
+  });
+
   /* ---- manifest ---- */
 
   check('manifest: 1.13.0, no built-in endpoint/model, 25 commands, all activation events', function () {

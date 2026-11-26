@@ -23,6 +23,12 @@ const modelWindow = require('./src/modelWindow');
 const APP = manifest.displayName;
 /* 已经提醒过的「模型 + 预算」组合，避免重复打扰。 */
 const CONTEXT_ADVISORY_KEY = 'win7Agent.contextAdvisory';
+/* 设置界面的数字框是「每敲一位就保存」：输入 23000 会依次写入 2 / 23 / 230 /
+ * 2300 / 23000。不做防抖的话，用户只是想填个数，却会被连弹好几次提醒。
+ * 等手停下来再判断，而且同一时间只允许一个提醒在飞。 */
+const CONTEXT_ADVISORY_DELAY_MS = 1200;
+let contextAdvisoryTimer = null;
+let contextAdvisoryBusy = false;
 const EXT_ID = manifest.publisher + '.' + manifest.name;
 let provider = null;
 /* 定时任务只有一个计时器（见 armSchedules）；deactivate 时要清掉。 */
@@ -187,6 +193,20 @@ function activate(context) {
     return false;
   }
   testHooks.adviseContextBudget = adviseContextBudget;
+
+  function scheduleContextAdvisory() {
+    if (contextAdvisoryTimer) { clearTimeout(contextAdvisoryTimer); }
+    const wait = typeof testHooks.contextAdvisoryDelayMs === 'number'
+      ? testHooks.contextAdvisoryDelayMs : CONTEXT_ADVISORY_DELAY_MS;
+    contextAdvisoryTimer = setTimeout(function () {
+      contextAdvisoryTimer = null;
+      if (contextAdvisoryBusy) { return; }
+      contextAdvisoryBusy = true;
+      Promise.resolve(adviseContextBudget()).catch(function (err) {
+        runtime.log('context budget advisory failed: ' + (err && err.message ? err.message : err));
+      }).then(function () { contextAdvisoryBusy = false; });
+    }, wait);
+  }
 
   /* 换文件夹 / 多根工作区增删后，@ 的文件清单必须重算。 */
   context.subscriptions.push(
@@ -1384,11 +1404,7 @@ function activate(context) {
         const budgetTouched = e.affectsConfiguration('win7Agent.maxContextChars') ||
           e.affectsConfiguration('win7Agent.maxHistoryMessages') ||
           e.affectsConfiguration('win7Agent.model');
-        if (budgetTouched) {
-          adviseContextBudget().catch(function (err) {
-            runtime.log('context budget advisory failed: ' + (err && err.message ? err.message : err));
-          });
-        }
+        if (budgetTouched) { scheduleContextAdvisory(); }
       })
     );
   }
@@ -1411,6 +1427,7 @@ function activate(context) {
 }
 
 function deactivate() {
+  if (contextAdvisoryTimer) { clearTimeout(contextAdvisoryTimer); contextAdvisoryTimer = null; }
   if (updateTimer) { clearTimeout(updateTimer); updateTimer = null; }
   if (scheduleTimer) { clearTimeout(scheduleTimer); scheduleTimer = null; }
   if (provider) { provider.dispose(); }

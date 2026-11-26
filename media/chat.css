@@ -638,7 +638,7 @@ button.seg-toggle:hover {
 @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(320%); } }
 
 .composer {
-  padding: 6px 8px 8px 8px;
+  padding: 8px 10px 10px 10px;
   border-top: 1px solid var(--vscode-panel-border, transparent);
 }
 
@@ -650,12 +650,19 @@ textarea {
   font-size: 12px;
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 2px;
-  padding: 5px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.35)));
+  border-radius: 6px;
+  padding: 8px 10px;
+  line-height: 1.55;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
-textarea:focus { outline: 1px solid var(--vscode-focusBorder); }
+/* 聚焦态是输入区唯一的「亮」的地方：一圈细光环，不要默认的粗黑框。 */
+textarea:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+}
 
 /* 拖文件悬停时的视觉反馈：虚线框提示「松手即变成 @引用」 */
 textarea.dragging {
@@ -1037,3 +1044,81 @@ textarea.qedit { margin-bottom: 3px; font-size: 11px; }
   cursor: pointer;
 }
 .mention-retry:hover { text-decoration: underline; }
+
+/* ==========================================================================
+   视觉打磨（v1.13.0）：简约 + 科技感。
+   原则是不发明第二套颜色——全部沿用主题变量，靠细线、圆角、层次和克制的
+   过渡取胜；不用 :has()、backdrop-filter 这类 Win7 老 Electron 撑不住的
+   特性，也不引入任何图片或网络字体。
+   ========================================================================== */
+
+/* 按钮：状态变化走 120ms 过渡，避免「啪」一下换色；键盘 Tab 必须有可见焦点，
+ * 否则全键盘操作（设置里常用的场景）会迷失位置。 */
+button { transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease; }
+button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+
+/* 发送行 hover：延续「透明底 + 细边框」的语言，只亮边框与浅底，
+ * 不变成实心蓝按钮——实心蓝是主操作色，一行五个按钮都变蓝会很吵。 */
+#send:hover:not(:disabled), #stop:hover:not(:disabled), #schedbtn:hover:not(:disabled),
+#clear:hover:not(:disabled), #keybtn:hover:not(:disabled),
+#importbtn:hover:not(:disabled), #exportbtn:hover:not(:disabled) {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.18));
+  border-color: var(--vscode-focusBorder, var(--vscode-panel-border, transparent));
+}
+
+.hdr .title { letter-spacing: 0.02em; }
+
+/* 记忆条：一条从左到右的细渐变，比纯色更能表达「容量在流动」。
+ * 80% 的黄色、满的红色仍然盖在渐变上（特异性更高），警示语义不变。 */
+.membar-fill {
+  background: linear-gradient(90deg,
+    var(--vscode-progressBar-background, #0e70c0),
+    var(--vscode-textLink-foreground, #3794ff));
+}
+
+/* 滚动条：默认那条又宽又灰，长对话里很抢戏。收成 10px 细条 + 两端留白，
+ * 只有滚动或悬停时才看得见。 */
+#messages::-webkit-scrollbar, .seg-body::-webkit-scrollbar,
+.msg pre::-webkit-scrollbar, .queue::-webkit-scrollbar { width: 10px; height: 10px; }
+#messages::-webkit-scrollbar-thumb, .seg-body::-webkit-scrollbar-thumb,
+.msg pre::-webkit-scrollbar-thumb, .queue::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background, rgba(128, 128, 128, 0.35));
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background-clip: padding-box;
+}
+#messages::-webkit-scrollbar-thumb:hover, .seg-body::-webkit-scrollbar-thumb:hover,
+.msg pre::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground, rgba(128, 128, 128, 0.55));
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+#messages::-webkit-scrollbar-corner, .seg-body::-webkit-scrollbar-corner { background: transparent; }
+
+/* 空对话不再是一块白板：一张虚线卡片说清三件事——能干什么、@ 干什么、
+ * 怎么发。纯 CSS 实现（:empty），不需要 JS 判断，来一条消息就自动消失。 */
+#messages:empty::before {
+  content: '新对话：直接描述任务即可。@ 可引用工作区文件，Ctrl+Enter 发送。';
+  display: block;
+  margin: 18px 8px 0 8px;
+  padding: 14px 12px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  border: 1px dashed var(--vscode-panel-border, rgba(128, 128, 128, 0.4));
+  border-radius: 8px;
+}
+
+/* 代码块与正文拉开一层：圆角统一 6px，行高略松，长命令读起来不挤。 */
+.msg pre { border-radius: 6px; }
+.msg pre code { line-height: 1.6; }
+
+/* 尊重系统的「减少动态效果」：状态点的呼吸、进度条的滑动都关掉，
+ * 剩下的颜色与文字已经足以表达状态。 */
+@media (prefers-reduced-motion: reduce) {
+  .pdot.active, .pdot.awaiting, .progress .bar { animation: none; }
+  button, textarea { transition: none; }
+  .membar-fill { transition: none; }
+}
