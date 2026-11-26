@@ -28,6 +28,7 @@ const proc = require('../src/processRunner');
 const endpoint = require('../src/endpoint');
 const taskCheck = require('../src/taskCheck');
 const failure = require('../src/failure');
+const modelWindow = require('../src/modelWindow');
 const md = require('../media/markdown');
 const manifest = require('../package.json');
 
@@ -757,6 +758,31 @@ try {
     assert.strictEqual(truncateMiddle('short', 600), 'short');
   });
 
+  /* 上下文预算推荐：模型名是唯一线索，按族系估窗口再折算成历史字符预算。
+   * 认不出来的名字必须返回 null——宁可让用户自己填，也不能编一个数字。 */
+  check('context budget recommendation follows the configured model window', function () {
+    assert.strictEqual(modelWindow.inferWindow('deepseek-chat').tokens, 128000);
+    assert.strictEqual(modelWindow.inferWindow('openai/gpt-4o').tokens, 128000, 'provider prefixes must be stripped');
+    assert.strictEqual(modelWindow.inferWindow('qwen2.5:14b').tokens, 32768, 'a local qwen is not a 128k cloud model');
+    assert.strictEqual(modelWindow.inferWindow('qwen-max').tokens, 128000);
+    assert.strictEqual(modelWindow.inferWindow('qwen3.8-flash-iq4').tokens, 32768, 'local GGUF names stay at 32k');
+    assert.strictEqual(modelWindow.inferWindow('llama-3.1-8b').tokens, 128000);
+    assert.strictEqual(modelWindow.inferWindow('llama-2-7b-chat').tokens, 4096);
+    assert.strictEqual(modelWindow.inferWindow('my-own-model'), null, 'unknown names get no invented number');
+    assert.strictEqual(modelWindow.inferWindow(''), null);
+
+    const rec = modelWindow.recommendContext('deepseek-chat');
+    assert.strictEqual(rec.chars, 90000);
+    assert.ok(rec.chars > 8000, 'a 128k model must not be left at the 8000 default');
+    assert.ok(rec.messages > 100, 'message cap must grow with the budget: ' + rec.messages);
+    assert.ok(/128k/.test(rec.note), 'the note must say which window the number came from');
+
+    assert.strictEqual(modelWindow.recommendContext('gemini-1.5-pro').chars, 200000, 'the hard cap applies');
+    assert.ok(modelWindow.recommendContext('phi-3-mini').chars <= 4000, 'a 4k model must get a small budget');
+    assert.strictEqual(modelWindow.needsAdjust(8000, 90000), true);
+    assert.strictEqual(modelWindow.needsAdjust(85000, 90000), false, 'within 20% needs no nagging');
+  });
+
   check('auto retry only for "talked but did nothing" verdicts', function () {
     assert.strictEqual(needsAutoRetry({ verdict: 'false-claim' }), true);
     assert.strictEqual(needsAutoRetry({ verdict: 'no-action' }), true);
@@ -807,9 +833,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.12.8, no built-in endpoint/model, 25 commands, all activation events', function () {
+  check('manifest: 1.13.0, no built-in endpoint/model, 25 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.12.8');
+    assert.strictEqual(manifest.version, '1.13.0');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');

@@ -524,6 +524,44 @@ check('the memory bar shows how much of the context budget is used', function ()
   assert.ok(/新对话/.test(els.memtext.textContent));
 });
 
+/* ---- v1.13.0 按当前模型推荐上下文预算 ---- */
+
+check('the memory bar offers the budget the current model needs', function () {
+  hostMessage({
+    type: 'memory',
+    memory: {
+      used: 8000, limit: 8000, percent: 100, messages: 20, dropped: 0, messageLimit: 100,
+      rec: { chars: 90000, messages: 500, tokens: 128000, note: '按 128k 上下文窗口估算', suggest: true }
+    }
+  });
+  const btn = els.memrec;
+  assert.strictEqual(btn.hidden, false, 'an off-target budget must be offered, not silently tolerated');
+  assert.ok(/推荐 9 万/.test(btn.textContent), 'the offer must show the recommended number: ' + btn.textContent);
+  assert.ok(/128k/.test(btn.title), 'the tooltip must say where the number came from: ' + btn.title);
+  assert.ok(/点击/.test(btn.title), 'and that clicking applies it');
+  assert.ok(/按当前模型推荐 90000 字符/.test(els.membar.title),
+    'the bar tooltip must carry the recommendation too: ' + els.membar.title);
+
+  posted.length = 0;
+  fire(btn, 'click');
+  assert.strictEqual(posted.filter(function (m) { return m.type === 'applyContextLimit'; }).length, 1,
+    'clicking must ask the host to write the setting, not do it in the webview');
+
+  /* 已经和推荐值一致就不打扰。 */
+  hostMessage({
+    type: 'memory',
+    memory: {
+      used: 8000, limit: 90000, percent: 9, messages: 20, dropped: 0, messageLimit: 500,
+      rec: { chars: 90000, messages: 500, tokens: 128000, note: 'x', suggest: false }
+    }
+  });
+  assert.strictEqual(els.memrec.hidden, true, 'no nagging once the budget matches');
+
+  /* 模型名认不出来：不给数字，免得把人带进坑。 */
+  hostMessage({ type: 'memory', memory: { used: 100, limit: 8000, percent: 1, messages: 1, dropped: 0, messageLimit: 100, rec: null } });
+  assert.strictEqual(els.memrec.hidden, true, 'an unrecognised model must not get an invented number');
+});
+
 /* ---- v1.12.0 定时任务：发送行入口 + 定时气泡角标 ---- */
 
 check('the composer hands the typed task to the scheduler, and refuses an empty box', function () {

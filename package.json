@@ -2,7 +2,7 @@
   "name": "win7-ai-agent",
   "displayName": "ZSZ.Win7.VSCode.AIAgent",
   "description": "适用于 Windows 7 + VS Code 1.70.x 的本地大模型 AI Agent。",
-  "version": "1.12.8",
+  "version": "1.13.0",
   "publisher": "dugudexiao",
   "icon": "media/icon.png",
   "author": {
@@ -269,11 +269,16 @@
           "default": 8000,
           "minimum": 2000,
           "maximum": 200000,
-          "description": "上下文总字符预算（默认 8000）。历史消息按这个预算从最新往前裁剪，最新的用户消息永不裁掉。中文约 1 字符 1 token，按模型上下文窗口调整：8k 模型建议 6000-8000，16k 以上可调到 14000。"
+          "description": "上下文总字符预算（默认 8000）。历史消息按这个预算从最新往前裁剪，最新的用户消息永不裁掉。不确定就交给推荐：面板顶端的记忆条会按 win7Agent.model 推断上下文窗口并显示「推荐 N」按钮（8k 模型约 6000，32k 约 22000，128k 约 9 万），点一下同时写好本项与 maxHistoryMessages。"
         },
         "win7Agent.preferShell": {
           "type": "string",
-          "enum": ["auto", "powershell", "cmd", "bash"],
+          "enum": [
+            "auto",
+            "powershell",
+            "cmd",
+            "bash"
+          ],
           "default": "auto",
           "enumDescriptions": [
             "自动：检测到 Git Bash（bash.exe）则默认用 bash，否则用 PowerShell。推荐——模型对 bash 语法最熟练",

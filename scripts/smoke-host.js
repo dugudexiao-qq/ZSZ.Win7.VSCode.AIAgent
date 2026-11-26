@@ -437,7 +437,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.12.8');
+  assert.strictEqual(info.version, '1.13.0');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -498,6 +498,8 @@ async function main() {
    * 藏进菜单或放在滚动区里都看不见。 */
   assert.ok(/id="membar"[\s\S]*id="memfill"[\s\S]*id="messages"/.test(view.webview.html),
     'the memory bar must sit between the header and the transcript');
+  assert.ok(/id="membar"[\s\S]*id="memrec"[\s\S]*id="messages"/.test(view.webview.html),
+    'the recommended-budget button must live inside the memory bar, not in a menu');
   assert.ok(rowHtml.indexOf('id="keybtn"') === -1, 'Set key must not sit among the composer buttons any more');
   assert.ok(rowHtml.indexOf('id="newchat"') === -1,
     'the separate new-chat button must be gone (new chat lives at the top of the session list)');
@@ -733,7 +735,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.12.8');
+  assert.strictEqual(state.version, '1.13.0');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -755,6 +757,25 @@ async function main() {
   assert.strictEqual(liveState.used, liveState.committed + 1700, 'used must include the live part');
   registeredProvider._liveReply = 0;
   registeredProvider._liveExtra = 0;
+  /* v1.13.0：按当前模型给推荐预算。qwen3.8-… 是本地 GGUF，按 32k 窗口算，
+   * 推荐 23000 字符 / 290 条；默认的 8000/100 明显偏小，必须提示。 */
+  assert.ok(mem.rec && mem.rec.chars === 23000,
+    'a recognised model must carry a recommended budget: ' + JSON.stringify(mem.rec));
+  assert.strictEqual(mem.rec.suggest, true,
+    '8000 chars / 100 messages is far below what a 32k model can hold, so the UI must offer it');
+  const prevChars = settings['win7Agent.maxContextChars'];
+  const prevMsgs = settings['win7Agent.maxHistoryMessages'];
+  settings['win7Agent.maxContextChars'] = 8000;
+  settings['win7Agent.maxHistoryMessages'] = 100;
+  await viewMessageHandler({ type: 'applyContextLimit' });
+  assert.strictEqual(settings['win7Agent.maxContextChars'], 23000,
+    'applying the recommendation must write the character budget');
+  assert.strictEqual(settings['win7Agent.maxHistoryMessages'], 290,
+    'and the message cap too, or the old 100 still cuts first');
+  delete scoped.global['win7Agent.maxContextChars'];
+  delete scoped.global['win7Agent.maxHistoryMessages'];
+  if (prevChars === undefined) { delete settings['win7Agent.maxContextChars']; } else { settings['win7Agent.maxContextChars'] = prevChars; }
+  if (prevMsgs === undefined) { delete settings['win7Agent.maxHistoryMessages']; } else { settings['win7Agent.maxHistoryMessages'] = prevMsgs; }
   console.log('  PASS  webview state exposes author, app name, 1000 s timeout and rule count');
 
   events.length = 0;

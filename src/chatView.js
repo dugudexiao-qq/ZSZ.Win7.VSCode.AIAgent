@@ -10,6 +10,7 @@ const snapLib = require('./snapshots');
 const fileIndex = require('./fileIndex');
 const failure = require('./failure');
 const schedulerLib = require('./scheduler');
+const modelWindow = require('./modelWindow');
 
 const EXT_ID = manifest.publisher + '.' + manifest.name;
 
@@ -350,6 +351,7 @@ class ChatViewProvider {
       '<div id="membar" class="membar" role="progressbar" aria-label="上下文记忆占用" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
         '<div class="membar-track"><div id="memfill" class="membar-fill"></div></div>' +
         '<span id="memtext" class="membar-text">记忆 —</span>' +
+        '<button id="memrec" class="membar-rec" type="button" hidden></button>' +
       '</div>\n' +
       '<div id="messages" aria-live="polite"></div>\n' +
       '<div class="statusbar"><span id="phaseDot" class="pdot"></span><span id="phaseText" class="ptext">就绪</span><span id="timer" class="timer"></span></div>\n' +
@@ -409,6 +411,13 @@ class ChatViewProvider {
     const live = Math.max(0, (Number(this._liveExtra) || 0) + (Number(this._liveReply) || 0));
     const total = used + live;
     const percent = limit > 0 ? Math.min(100, Math.round((total / limit) * 100)) : 0;
+    /* 按模型名推荐预算：maxContextChars 是个裸数字，默认 8000 对 128k 的模型
+     * 太保守、对 8k 的本地模型又太大。模型名是唯一线索，按族系估窗口再折算。 */
+    if (this._recCacheModel !== config.model) {
+      this._recCacheModel = config.model;
+      this._recCache = modelWindow.recommendContext(config.model);
+    }
+    const rec = this._recCache;
     return {
       used: total,
       committed: used,
@@ -420,8 +429,37 @@ class ChatViewProvider {
       messages: history.length,
       messageLimit: msgLimit,
       dropped: recent.dropped,
-      summarized: summarized
+      summarized: summarized,
+      /* rec 为 null 表示没认出来这个模型名：界面就不推荐，别硬塞数字。 */
+      rec: rec ? {
+        chars: rec.chars,
+        messages: rec.messages,
+        tokens: rec.tokens,
+        note: rec.note,
+        suggest: modelWindow.needsAdjust(limit, rec.chars) || modelWindow.needsAdjust(msgLimit, rec.messages)
+      } : null
     };
+  }
+
+  /* 「推荐」按钮：把设置写成推荐值。字符预算与消息条数必须一起改——只改
+   * 字符数的话，128k 模型仍被默认的 100 条卡在约 8000 字符，改了个寂寞。 */
+  async _applyContextLimit() {
+    const config = runtime.getConfig();
+    const rec = modelWindow.recommendContext(config.model);
+    if (!rec) {
+      vscode.window.showWarningMessage('没识别出当前模型「' + (config.model || '未设置') +
+        '」，无法给出推荐值。请按模型说明手动填写 win7Agent.maxContextChars。');
+      return;
+    }
+    const cfg = vscode.workspace.getConfiguration('win7Agent');
+    const target = runtime.settingTarget ? runtime.settingTarget(cfg, 'maxContextChars')
+      : (vscode.ConfigurationTarget ? vscode.ConfigurationTarget.Global : undefined);
+    await cfg.update('maxContextChars', rec.chars, target);
+    await cfg.update('maxHistoryMessages', rec.messages, target);
+    this._recCacheModel = undefined;
+    await this.postState();
+    vscode.window.showInformationMessage('上下文预算已按 ' + rec.model + ' 调整为 ' +
+      rec.chars + ' 字符 / ' + rec.messages + ' 条历史（' + rec.note + '）。');
   }
 
   /* 每次 push 历史后只推这一条，不必整套 postState（那要读 Key、拼会话列表）。 */
@@ -662,6 +700,8 @@ class ChatViewProvider {
         break;
       case 'revertSnapshot':
         return this._revertSnapshot(String(msg.id || ''));
+      case 'applyContextLimit':
+        return this._applyContextLimit();
       case 'send':
         return this._handleSend(String(msg.text || ''), entry);
       case 'scheduleDraft':
