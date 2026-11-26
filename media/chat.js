@@ -296,7 +296,12 @@
     // Deliberately keep Send enabled while busy: new input goes to the queue.
     sendBtn.disabled = false;
     stopBtn.disabled = !value;
-    sendBtn.textContent = value ? '排队' : 'Send';
+    /* 按钮始终写「Send」。忙碌时点它其实是排到这一轮之后，但把按钮改名成
+     * 「排队」会让人以为功能变了、找不到发送键；用悬停提示说明就够了。 */
+    sendBtn.textContent = 'Send';
+    sendBtn.title = value
+      ? '正在回复：点击会排到这一轮结束之后发送'
+      : '发送（Ctrl+Enter）';
   }
 
   function fmt(sec) {

@@ -470,11 +470,22 @@ check('profiles menu button exists and posts the profiles message (v1.10.0)', fu
   assert.strictEqual(req.length, 1, 'clicking the button must open the profile switcher');
 });
 
-/* ---- v1.12.0 定时任务：菜单入口 + 定时气泡角标 ---- */
+/* ---- v1.12.5 发送按钮不因忙碌改名 ---- */
 
-check('the menu hands the typed task to the scheduler, and refuses an empty box', function () {
+check('the Send button keeps its name while a reply is running', function () {
+  hostMessage({ type: 'busy', value: true, startedAt: Date.now() });
+  assert.strictEqual(els.send.textContent, 'Send',
+    'renaming Send to 排队 makes the send box look like a different action');
+  assert.ok(/排到这一轮/.test(els.send.title || ''), 'the tooltip must explain that it queues');
+  hostMessage({ type: 'busy', value: false, elapsedMs: 1200 });
+  assert.strictEqual(els.send.textContent, 'Send');
+});
+
+/* ---- v1.12.0 定时任务：发送行入口 + 定时气泡角标 ---- */
+
+check('the composer hands the typed task to the scheduler, and refuses an empty box', function () {
   const btn = els.schedbtn;
-  assert.ok(btn, 'the menu must contain 定时发送…');
+  assert.ok(btn, 'the composer must contain the 定时 button');
   posted.length = 0;
   input.value = '   ';
   fire(btn, 'click');

@@ -437,7 +437,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.12.4');
+  assert.strictEqual(info.version, '1.12.5');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -499,6 +499,9 @@ async function main() {
     'the separate new-chat button must be gone (new chat lives at the top of the session list)');
   assert.ok(rowHtml.indexOf('id="sessionBtn"') !== -1 && rowHtml.indexOf('id="sessionMenu"') !== -1,
     'session switcher + its list must sit in the composer row');
+  assert.ok(/id="stop"[^>]*>[^<]*<\/button>\s*<button id="schedbtn"/.test(rowHtml),
+    '定时 must sit right after Send/Stop in the composer row (it used to hide in the menu)');
+  assert.ok(rowHtml.indexOf('id="schedbtn"') !== -1, '定时 must be part of the composer row');
   assert.ok(rowHtml.indexOf('切换对话') !== -1,
     'the switcher label must be the fixed text 切换对话 (a long session title widened it and wrapped the row)');
   assert.ok(rowHtml.indexOf('<select') === -1, 'native select must be gone (it ignores the theme on Win7)');
@@ -628,6 +631,28 @@ async function main() {
     'deleting the active conversation must replay the surviving history');
   console.log('  PASS  conversations: new session, switch back, delete (idle + active), histories stay separate');
 
+  /* 重启后重新挂载：挂载瞬间的 replay 往往赶在 webview 注册监听之前，丢掉就
+   * 白屏。webview 报 ready 后必须再定向补一次，否则「关掉 VS Code 再打开，
+   * 刚才的对话不见了」。 */
+  registeredProvider._history.push({ role: 'user', content: '重启前说过的一句话' });
+  registeredProvider._touchSessionTitle('重启前说过的一句话');
+  await new Promise(function (r) { setTimeout(r, 30); });
+  const ChatViewProviderCtor = require('../src/chatView').ChatViewProvider;
+  const prevHandler = viewMessageHandler;
+  const reloaded = new ChatViewProviderCtor(registeredProvider._extensionUri);
+  const reloadView = makeView();
+  reloaded.resolveWebviewView(reloadView);
+  events.length = 0;
+  await viewMessageHandler({ type: 'ready' });
+  viewMessageHandler = prevHandler;
+  const readyReplay = events.filter(function (m) { return m.type === 'replay'; }).pop();
+  assert.ok(readyReplay, 'a cold webview must receive the persisted transcript on ready');
+  assert.ok(readyReplay.items.length > 0, 'the replay must carry what was said before the restart');
+  assert.ok(readyReplay.items.some(function (it) { return it.role === 'user' && it.content; }),
+    'the replayed transcript must include the earlier user turns');
+  reloaded._views.forEach(function (v) { assert.ok(v.webview); });
+  console.log('  PASS  a restarted panel replays the saved conversation once the webview is ready');
+
   const fs = require('fs');
   const chatJs = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
   const chatCss = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.css'), 'utf8');
@@ -704,7 +729,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.12.4');
+  assert.strictEqual(state.version, '1.12.5');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1537,7 +1562,7 @@ async function main() {
   const cvSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
   const chatSource = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
   const cssSource = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.css'), 'utf8');
-  assert.ok(/id="schedbtn"/.test(cvSource), 'the menu must offer 定时发送');
+  assert.ok(!/id="schedbtn" class="menu-item"/.test(cvSource), 'the menu must not keep a second 定时 entry');
   assert.ok(/scheduleDraft/.test(chatSource), 'the composer must hand the draft to the host');
   assert.ok(/case 'userMessage'/.test(chatSource), 'the webview must render host-initiated user bubbles');
   assert.ok(/\.msg-badge/.test(cssSource), 'scheduled bubbles need a visible badge');

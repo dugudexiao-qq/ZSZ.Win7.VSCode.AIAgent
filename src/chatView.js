@@ -195,8 +195,15 @@ class ChatViewProvider {
     });
   }
 
-  _replay() {
-    this._post({ type: 'replay', items: this._replayItems() }, false);
+  /* entry 给定时只发给那个视图：webview 的脚本还没跑起来时广播的 replay
+   * 会丢（监听器尚未注册），ready 握手后再定向补一次才不会白屏。 */
+  _replay(entry) {
+    const items = this._replayItems();
+    if (entry && entry.webview) {
+      try { entry.webview.postMessage({ type: 'replay', items: items }); } catch (e) { /* 视图已销毁 */ }
+      return;
+    }
+    this._post({ type: 'replay', items: items }, false);
   }
 
   /* Shared attach path for the sidebar WebviewView and editor WebviewPanel.
@@ -314,7 +321,6 @@ class ChatViewProvider {
           '<button id="rules" class="menu-item" title="管理长期要求">长期要求 (0)</button>' +
           '<button id="lessons" class="menu-item" title="查看/删除自动总结的经验">经验记忆 (0)</button>' +
           '<button id="profiles" class="menu-item" title="多套模型配置一键切换">模型配置</button>' +
-          '<button id="schedbtn" class="menu-item" title="把输入框里的内容排到指定时间执行（内网错峰、夜里跑批）">定时发送…</button>' +
           '<div class="menu-sep"></div>' +
           '<button id="panelbtn" class="menu-item" title="在编辑器区域打开独立聊天窗">在新面板打开</button>' +
           '<button id="endpoint" class="menu-item" title="设置服务地址 / 端口">服务地址 / 端口</button>' +
@@ -338,6 +344,7 @@ class ChatViewProvider {
       '  <div id="attachments" class="attach-bar" hidden aria-label="已导入的文件"></div>\n' +
       '  <textarea id="input" rows="3" placeholder="输入消息；上一条未完成时可直接继续输入，Ctrl+Enter 发送并暂存"></textarea>\n' +
       '  <div class="row"><button id="send" class="primary">Send</button><button id="stop" disabled>Stop</button>' +
+        '<button id="schedbtn" title="定时发送：把输入框里的内容排到指定时间执行（内网错峰、夜里跑批）">定时</button>' +
         '<button id="importbtn" title="导入文件作为本轮上下文">Import</button>' +
         '<button id="exportbtn" title="把上一条回答保存成文件（.md / .csv / .txt）">Save</button>' +
         /* 会话切换：原生 select 在 Win7 上是系统控件，配色跟主题对不上，
@@ -539,6 +546,11 @@ class ChatViewProvider {
     if (!msg || !msg.type) { return; }
     switch (msg.type) {
       case 'ready':
+        /* 挂载时那份 replay 常常赶在脚本注册监听之前发出，就此丢掉——表现出来
+         * 就是「关掉 VS Code 再打开，看不到刚才的对话」。webview 主动报 ready
+         * 说明监听器已就位，这时定向补一次才可靠。正在跑的那一轮不重放，否则
+         * 会把已经流式输出到一半的内容清掉。 */
+        if (!this._busy) { this._replay(entry); }
         this.postState();
         this._postAttachments(entry);
         break;
