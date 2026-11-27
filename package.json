@@ -433,6 +433,7 @@
     "smoke": "node scripts/smoke-host.js",
     "audit": "node scripts/audit.js",
     "pack": "node scripts/pack-vsix.js",
-    "release": "node scripts/publish-release.js"
+    "release": "node scripts/publish-release.js",
+    "push:github": "node scripts/push-github-api.js"
   }
 }
