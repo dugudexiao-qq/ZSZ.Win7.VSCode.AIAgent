@@ -34,6 +34,7 @@ let firstSystemPrompt = '';
 let lastToolResult = '';
 let lastMessages = [];
 const createdPanels = [];
+const statusItems = [];
 const quickPicks = [];
 const executedCommands = [];
 
@@ -62,6 +63,16 @@ const vscodeStub = {
     }
   },
   window: {
+    createStatusBarItem: function () {
+      const item = {
+        text: '', tooltip: '', command: '', visible: false,
+        show: function () { this.visible = true; },
+        hide: function () { this.visible = false; },
+        dispose: function () { this.visible = false; }
+      };
+      statusItems.push(item);
+      return item;
+    },
     createOutputChannel: function () {
       return { appendLine: function () {}, show: function () {}, dispose: function () {} };
     },
@@ -237,6 +248,7 @@ const vscodeStub = {
     ]
   },
   ViewColumn: { Beside: -2, One: 1 },
+  StatusBarAlignment: { Left: 1, Right: 2 },
   CancellationTokenSource: function () {
     this.token = {
       isCancellationRequested: false,
@@ -264,7 +276,12 @@ function makeView() {
     postMessage: function (msg) { events.push(msg); },
     onDidReceiveMessage: function (cb) { viewMessageHandler = cb; return disposable(); }
   };
-  return { webview: webview, onDidDispose: function () { return disposable(); } };
+  return {
+    webview: webview,
+    visible: true,
+    onDidDispose: function () { return disposable(); },
+    onDidChangeVisibility: function (cb) { this._visibilityHandler = cb; return disposable(); }
+  };
 }
 
 let callCount = 0;
@@ -448,7 +465,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.13.0');
+  assert.strictEqual(info.version, '1.13.1');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -499,11 +516,60 @@ async function main() {
   assert.ok(/markdown\.js/.test(view.webview.html), 'markdown renderer must be injected into the webview');
   assert.ok(/ZSZ\.Win7\.VSCode\.AIAgent/.test(view.webview.html), 'new app name must be in the webview');
   ['id="rules"', 'id="progress"', 'id="messages"', 'id="importbtn"', 'id="exportbtn"',
-    'id="menuToggle"', 'id="menu"', 'id="flagWrite"', 'id="flagWriteConfirm"', 'id="flagShellConfirm"', 'id="flagSubtask"',
+    'id="menuToggle"', 'id="menu"', 'id="minimize"', 'id="flagWrite"', 'id="flagWriteConfirm"', 'id="flagShellConfirm"', 'id="flagSubtask"',
     'id="sessionBtn"', 'id="sessionMenu"', 'id="keybtn"', 'id="clear"',
     'id="queue"', 'id="panelbtn"', 'id="endpoint"', 'id="settings"'].forEach(function (id) {
     assert.ok(view.webview.html.indexOf(id) !== -1, 'webview must contain ' + id);
   });
+  /* 最小化要关闭真正的侧栏，而不是只隐藏 webview 里的 DOM。底部入口只在
+   * 最小化后出现，并随任务从「运行中」切到「已结束」；恢复后立即隐藏。 */
+  assert.strictEqual(statusItems.length, 0, 'the status-bar restore entry must not be permanent clutter');
+  await viewMessageHandler({ type: 'minimize' });
+  assert.ok(executedCommands.some(function (args) { return args[0] === 'workbench.action.closeSidebar'; }),
+    'minimize must reclaim the actual sidebar space');
+  assert.strictEqual(statusItems.length, 1, 'minimize creates one restore entry');
+  assert.strictEqual(statusItems[0].visible, true, 'the restore entry must be visible after minimizing');
+  assert.strictEqual(statusItems[0].command, 'win7Agent.openChat');
+  registeredProvider._setBusy(true);
+  assert.ok(/运行中/.test(statusItems[0].text), 'a background run must remain visible while minimized');
+  registeredProvider._setBusy(false);
+  assert.ok(/已结束/.test(statusItems[0].text), 'completion must be visible without reopening the panel');
+  await commands['win7Agent.openChat']();
+  assert.strictEqual(statusItems[0].visible, false, 'restoring must remove the extra status-bar entry');
+  await viewMessageHandler({ type: 'minimize' });
+  view.visible = true;
+  view._visibilityHandler();
+  assert.strictEqual(ext.testHooks.isAgentMinimized(), false,
+    'restoring from the activity bar must also clear the minimized state');
+
+  /* 编辑器标签最小化会销毁 webview：后台运行中重新打开，历史和本轮已生成
+   * 的部分都要回来，不能只剩一个空面板。 */
+  const mainMessageHandler = viewMessageHandler;
+  registeredProvider._history.push({ role: 'user', content: 'minimize-resume-check' });
+  registeredProvider._setBusy(true);
+  registeredProvider._trackMemory({ type: 'start' });
+  registeredProvider._trackMemory({ type: 'delta', text: 'already generated' });
+  const midView = makeView();
+  registeredProvider.resolveWebviewView(midView);
+  const resumeMark = events.length;
+  await viewMessageHandler({ type: 'ready' });
+  const resumeEvents = events.slice(resumeMark);
+  assert.ok(resumeEvents.some(function (e) {
+    return e.type === 'replay' && e.items.some(function (m) { return m.content === 'minimize-resume-check'; });
+  }), 'a fresh view must receive persisted history even while busy');
+  assert.ok(resumeEvents.some(function (e) { return e.type === 'delta' && e.text === 'already generated'; }),
+    'and then the partial in-flight answer, not a blank transcript');
+  registeredProvider._history.pop();
+  registeredProvider._setBusy(false);
+  registeredProvider._liveReply = 0;
+  registeredProvider._liveReplyText = '';
+  /* 这个额外视图只用于恢复断言；留着会让后续共享 events 数组收到双份。 */
+  registeredProvider._views = registeredProvider._views.filter(function (entry) {
+    return entry.webview !== midView.webview;
+  });
+  viewMessageHandler = mainMessageHandler;
+  console.log('  PASS  Agent minimizes the real sidebar and restores from a status-aware entry');
+
   const rowHtml = (view.webview.html.match(/<div class="row">([\s\S]*?)<\/div>/) || [])[1] || '';
   /* 记忆容量条必须在对话顶端（hdr 之后、messages 之前），常驻可见；
    * 藏进菜单或放在滚动区里都看不见。 */
@@ -744,7 +810,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.13.0');
+  assert.strictEqual(state.version, '1.13.1');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');

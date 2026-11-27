@@ -56,6 +56,9 @@ class ChatViewProvider {
      * 否则一轮里只在发送和结束各跳一次。 */
     this._liveExtra = 0;
     this._liveReply = 0;
+    /* 最小化编辑器标签会销毁 webview。保留本轮已生成的正文，后台运行中
+     * 重新打开时先重放历史，再补这一段，不能让用户对着空白面板等。 */
+    this._liveReplyText = '';
     this._memoryTimer = null;
     /* 定时任务撞上正在回复时的等待队列：宿主侧排队，这一轮结束立刻接着跑。
      * 前端那条队列是「用户手动打的字」，两者互不干扰。 */
@@ -224,7 +227,7 @@ class ChatViewProvider {
     };
     webview.html = this._getHtml(webview);
 
-    const entry = { webview: webview };
+    const entry = { webview: webview, part: part };
     this._views.push(entry);
     part.onDidDispose(() => {
       const i = this._views.indexOf(entry);
@@ -232,6 +235,13 @@ class ChatViewProvider {
       if (part === this._panel) { this._panel = null; }
     });
     webview.onDidReceiveMessage((msg) => this._onMessage(msg, entry));
+    /* 用户也可能从活动栏直接恢复，而不是点底部状态栏。两种入口都要把
+     * 「已最小化」状态清掉，否则恢复后底部还留着一个多余的 Agent。 */
+    if (typeof part.onDidChangeVisibility === 'function') {
+      part.onDidChangeVisibility(() => {
+        if (part.visible && typeof this.onRestore === 'function') { this.onRestore(); }
+      });
+    }
 
     // Replay order matters: first wipe the DOM and lay down the persisted
     // history, THEN replay queued live-run events so in-flight output
@@ -321,6 +331,7 @@ class ChatViewProvider {
       '<div class="hdr">' +
         '<span class="title" title="' + appName + '">ZSZ · AI Agent</span>' +
         '<span id="keystate" class="badge" title="点击查看连接诊断">checking</span>' +
+        '<button id="minimize" class="iconbtn minimize-toggle" type="button" title="最小化 Agent（任务继续在后台运行；可从底部状态栏恢复）" aria-label="最小化 Agent">−</button>' +
         '<button id="menuToggle" class="iconbtn menu-toggle" title="选项" aria-label="选项" aria-expanded="false">···</button>' +
         '<div id="menu" class="menu" hidden>' +
           '<div class="menu-head"><button id="author" class="menu-author" title="© 2026 ' + info.author + ' · MIT 许可 · 反馈：' + info.email + ' · 点击查看关于">© ' + info.author + ' · MIT · v' + info.version + '</button></div>' +
@@ -450,12 +461,14 @@ class ChatViewProvider {
     }
     if (evt.type === 'delta') {
       this._liveReply += String(evt.text || '').length;
+      this._liveReplyText += String(evt.text || '');
       this._scheduleMemory();
       return;
     }
     /* 新一轮（或另一段回答）从零开始计回复长度，避免上段正文重复计算。 */
     if (evt.type === 'start') {
       this._liveReply = 0;
+      this._liveReplyText = '';
       return;
     }
     if (evt.type === 'busy' && evt.value === false) {
@@ -636,15 +649,51 @@ class ChatViewProvider {
     this._post({ type: 'attachments', items: [] }, false);
   }
 
+  /* busy 同时驱动面板和「最小化后」的底部状态入口。集中变更，避免某条
+   * 提前返回的错误路径忘了把「运行中」改回「已结束」。 */
+  _setBusy(value) {
+    const next = Boolean(value);
+    if (this._busy === next) { return; }
+    this._busy = next;
+    if (typeof this.onBusyChange === 'function') {
+      try { this.onBusyChange(next); } catch (e) { runtime.log('minimized status update failed: ' + e); }
+    }
+  }
+
+  /* 真正的最小化必须交给 workbench：只给 webview 内容加 display:none 只会
+   * 留下一片空白，侧栏高度一点也收不回。侧栏直接关闭；编辑器里的聊天标签
+   * 没有「最小化」概念，就关掉这个标签。两者都只销毁视图，Agent 循环、
+   * 会话历史和定时任务都还在 provider / 扩展宿主里继续。 */
+  async _minimize(entry) {
+    if (typeof this.onMinimize === 'function') { this.onMinimize(this._busy); }
+    try {
+      if (entry && entry.part && entry.part === this._panel) {
+        entry.part.dispose();
+      } else {
+        await vscode.commands.executeCommand('workbench.action.closeSidebar');
+      }
+    } catch (err) {
+      if (typeof this.onRestore === 'function') { this.onRestore(); }
+      runtime.log('minimize failed: ' + (err && err.message ? err.message : err));
+      this._post({ type: 'error', text: '最小化失败：' + (err && err.message ? err.message : err) }, false);
+    }
+  }
+
   _onMessage(msg, entry) {
     if (!msg || !msg.type) { return; }
     switch (msg.type) {
       case 'ready':
         /* 挂载时那份 replay 常常赶在脚本注册监听之前发出，就此丢掉——表现出来
          * 就是「关掉 VS Code 再打开，看不到刚才的对话」。webview 主动报 ready
-         * 说明监听器已就位，这时定向补一次才可靠。正在跑的那一轮不重放，否则
-         * 会把已经流式输出到一半的内容清掉。 */
-        if (!this._busy) { this._replay(entry); }
+         * 说明监听器已就位，这时定向补一次才可靠。正在跑的那一轮也可以重放：
+         * 这是全新视图，随后会补发本轮已生成正文，不会清掉旧视图的内容。 */
+        this._replay(entry);
+        /* 最小化编辑器标签后，Agent 仍在跑。新视图先拿到落库历史，再补上
+         * 本轮已生成的片段；后续 delta 会照常接着到达。 */
+        if (this._busy && this._liveReplyText) {
+          this._postTo(entry, { type: 'start' });
+          this._postTo(entry, { type: 'delta', text: this._liveReplyText });
+        }
         this.postState();
         this._postAttachments(entry);
         break;
@@ -660,6 +709,8 @@ class ChatViewProvider {
       case 'profiles':
         vscode.commands.executeCommand('win7Agent.switchProfile');
         break;
+      case 'minimize':
+        return this._minimize(entry);
       case 'revertSnapshot':
         return this._revertSnapshot(String(msg.id || ''));
       case 'send':
@@ -799,12 +850,12 @@ class ChatViewProvider {
      * `_busy = true` 放在两个 await 之后，连点两下发送（或面板 + 边栏同时发）
      * 两边都能通过 busy 检查，最后两轮 runAgent 并行跑、共用同一个 _cts——
      * Stop 只停掉后一轮，前一轮继续写历史，会话就乱了。 */
-    this._busy = true;
+    this._setBusy(true);
     this._cts = new vscode.CancellationTokenSource();
     const releaseSlot = () => {
       if (this._cts) { this._cts.dispose(); }
       this._cts = null;
-      this._busy = false;
+      this._setBusy(false);
     };
     let config;
     let apiKey;
@@ -925,12 +976,13 @@ class ChatViewProvider {
     } finally {
       if (this._cts) { this._cts.dispose(); }
       this._cts = null;
-      this._busy = false;
+      this._setBusy(false);
       /* 本轮结束：临时占用要么已经落进 history（assistant 回复），要么被丢弃
        * （失败的中途工具结果），继续挂在进度条上就是虚高。 */
       if (this._memoryTimer) { clearTimeout(this._memoryTimer); this._memoryTimer = null; }
       this._liveExtra = 0;
       this._liveReply = 0;
+      this._liveReplyText = '';
       // The webview starts the next queued item on 'done', so clear the host
       // guard first to avoid a fast round-trip being rejected as "busy".
       this._post({ type: 'done' }, false);

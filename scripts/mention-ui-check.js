@@ -524,6 +524,19 @@ check('the memory bar shows how much of the context budget is used', function ()
   assert.ok(/新对话/.test(els.memtext.textContent));
 });
 
+/* ---- Agent 最小化：交给宿主关闭真正的侧栏 ---- */
+check('minimize posts one host request and closes an open menu', function () {
+  assert.ok(els.minimize, 'the header must expose a minimize button');
+  els.menu.hidden = true;
+  fire(els.menuToggle, 'click');
+  assert.strictEqual(els.menu.hidden, false, 'precondition: menu is open');
+  const before = posted.length;
+  fire(els.minimize, 'click');
+  assert.strictEqual(posted.length, before + 1);
+  assert.strictEqual(posted[posted.length - 1].type, 'minimize');
+  assert.strictEqual(els.menu.hidden, true, 'the dropdown must not remain open in a hidden view');
+});
+
 /* ---- v1.13.0 上下文预算不再占用界面：只在改设置时提醒 ---- */
 
 check('the panel carries no context-budget control', function () {

@@ -39,6 +39,7 @@
   var queueEl = document.getElementById('queue');
   var menuToggle = document.getElementById('menuToggle');
   var menuEl = document.getElementById('menu');
+  var minimizeBtn = document.getElementById('minimize');
 
   var currentBubble = null;
   var currentRaw = '';
@@ -920,6 +921,14 @@
   }
 
   sendBtn.addEventListener('click', send);
+  if (minimizeBtn) {
+    minimizeBtn.addEventListener('click', function () {
+      /* 不在前端隐藏 DOM：那样侧栏仍占着原来的高度。宿主会关闭整个视图，
+       * 但保留运行中的 Agent，并在 VS Code 底部放一个恢复入口。 */
+      setMenu(false);
+      vscode.postMessage({ type: 'minimize' });
+    });
+  }
   stopBtn.addEventListener('click', function () {
     phaseText.textContent = '正在取消…';
     phaseText.className = 'ptext';
