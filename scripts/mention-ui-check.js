@@ -616,6 +616,54 @@ async function round(kind, text, queuedText) {
   return sendsAfter(mark);
 }
 
+/* ---- v1.13.2 面板顶部展示已排定的定时任务 ---- */
+
+check('the schedule strip is hidden when nothing is scheduled', function () {
+  hostMessage({ type: 'schedules', items: [] });
+  assert.strictEqual(els.schedlist.hidden, true,
+    'an empty schedule must not take panel space');
+});
+
+check('scheduled tasks render as clickable rows with time, repeat and paused state', function () {
+  hostMessage({ type: 'schedules', items: [
+    { id: 'j1', when: '明天 02:00', gap: '（还有 7 小时）', repeat: '每天', disabled: false,
+      short: '检查所有失效链接', text: '检查所有失效链接', full: '明天 02:00 · 每天' },
+    { id: 'j2', when: '12-01 09:00', gap: '（还有 3 天）', repeat: '仅一次', disabled: true,
+      short: '跑一次批处理', text: '跑一次批处理', full: '12-01 09:00 · 仅一次' }
+  ] });
+  assert.strictEqual(els.schedlist.hidden, false, 'the strip must appear once a task exists');
+  assert.ok(/定时任务 2/.test(els.schedcount.textContent), 'the count must be visible');
+  assert.ok(/明天 02:00/.test(els.schednext.textContent),
+    'collapsed header still names the next fire time, not just a count');
+  assert.strictEqual(els.scheditems.children.length, 2, 'one row per scheduled task');
+  const row0 = els.scheditems.children[0];
+  const row1 = els.scheditems.children[1];
+  assert.ok(/每天/.test(row0.children[0].textContent) && !/disabled/.test(row0.className),
+    'an enabled task shows its repeat rule');
+  assert.ok(/已暂停/.test(row1.children[0].textContent) && /disabled/.test(row1.className),
+    'a paused task must be visibly marked, not silently listed');
+  assert.strictEqual(row0.children[1].textContent, '检查所有失效链接', 'the text snippet must be shown');
+
+  posted.length = 0;
+  fire(row0, 'click');
+  assert.strictEqual(posted.length, 1, 'clicking a row must open the manager');
+  assert.strictEqual(posted[0].type, 'scheduleManage');
+  assert.strictEqual(posted[0].id, 'j1', 'the clicked task id must reach the host, not just any task');
+});
+
+check('the strip collapses by default and remembers the user choice across refreshes', function () {
+  assert.strictEqual(els.scheditems.hidden, true, 'rows start collapsed so the strip stays one line');
+  fire(els.schedhead, 'click');
+  assert.strictEqual(els.scheditems.hidden, false, 'the header toggles rows open');
+  hostMessage({ type: 'schedules', items: [
+    { id: 'j1', when: '明天 02:00', gap: '', repeat: '每天', disabled: false, short: 'x', text: 'x', full: 'x' }
+  ] });
+  assert.strictEqual(els.scheditems.hidden, false,
+    'a state refresh must not reopen/close a strip the user already toggled');
+  fire(els.schedhead, 'click');
+  assert.strictEqual(els.scheditems.hidden, true, 'the header toggles rows closed again');
+});
+
 const scenarios = [];
 function checkAsync(name, fn) { scenarios.push({ name: name, fn: fn }); }
 

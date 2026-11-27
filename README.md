@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.13.1-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.13.2-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -47,9 +47,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.13.1** 的附件 `zsz-win7-vscode-aiagent-1.13.1.vsix`（约 200 KB）
-   （直链：[Releases/download/v1.13.1](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.13.1/zsz-win7-vscode-aiagent-1.13.1.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.13.1.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.13.2** 的附件 `zsz-win7-vscode-aiagent-1.13.2.vsix`（约 200 KB）
+   （直链：[Releases/download/v1.13.2](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.13.2/zsz-win7-vscode-aiagent-1.13.2.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.13.2.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)：[发行版页](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases) 与 GitHub 逐版对应（每个版本都带 `.vsix` 附件），也可以在文件页的 `dist/` 里下最新一版。
@@ -91,7 +91,9 @@
 4. 选重复方式：**每天这个时间**（夜里跑批的常规用法）或**只跑这一次**
 5. 到点后 Agent 自己发起一整轮，对话里那条消息带 `定时 02:00` 角标，一眼能看出不是自己打的字
 
-管理：`Ctrl+Shift+P` → `定时任务：管理`，可以看下次执行时间、**立即执行一次**、暂停/恢复、删除。
+管理：面板顶端（记忆条下方）会常驻一条**定时任务清单**，折叠成一行显示「定时任务 N · 最近一条的下次执行时间」，点开逐条看时间、倒计时、每天/仅一次、暂停状态，点某条直达该任务的「立即执行 / 暂停 / 删除」。新建/删除/暂停/到点后清单自动刷新，没有任务时整条隐藏。
+
+也可以用 `Ctrl+Shift+P` → `定时任务：管理` 打开同样的操作菜单。
 
 三条要知道的限制与约定：
 
@@ -164,6 +166,7 @@ feed 的内容很宽松，认这三种形态之一即可：
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.13.2**：已排定的定时任务现在**在面板上可见**。记忆条下方常驻一条折叠的清单：标题显示条数与最近一次的执行时间，展开后逐条列出时间、倒计时、每天/仅一次、任务摘要，暂停的条目明确标出「已暂停」并淡化显示；点某条直接打开那条任务的「立即执行 / 暂停 / 删除」，不必再去命令面板重新找。新建、删除、暂停、到点触发后清单自动刷新，没有任务时整条隐藏，不占对话空间。清单只显示排了什么——VS Code 关着不会执行这点仍然不变。
 - **v1.13.1**：支持 **Agent 最小化**。标题栏新增 `−`，侧栏会真正收起（不是只把 webview 内容隐藏后留下一片空白），当前任务、会话和定时任务继续运行。最小化后 VS Code 底部才出现恢复入口，按状态显示「Agent 运行中 / 已结束」，点击或从活动栏恢复后自动消失，不常驻占地方。编辑器里的聊天标签也可最小化；补了后台运行时重新打开的重放逻辑，除已保存历史外，还会恢复本轮已生成的正文，再继续接收后续输出。
 - **v1.13.0**：上下文预算**按模型推荐**。`maxContextChars` 以前是个裸数字，默认 8000 对 128k 的云端模型太保守（只能记住最近几轮），对 8k 的本地小模型又偏大。现在按 `model` 的族系推断窗口（DeepSeek/GLM/Kimi 128k、Qwen 本地 32k、Qwen-max 128k、Llama 3.x 128k、Claude 200k、Phi 4k…），按窗口的 70% 折算字符预算（其余留给系统提示、工具结果和回复），折算后同步给出历史条数。**提醒只发生在改设置时**：动 `maxContextChars` / `maxHistoryMessages` 或换模型，且与推荐值差 20% 以上，才弹一次「设为推荐值 / 保留当前」，点前一个会把字符数与条数一起写好；同一组「模型 + 当前值」只提醒一次，关掉弹窗也记住，模型名认不出来就完全不提——宁可让人自己填，也不编一个值把请求撑爆。 提醒另有 1.2 秒防抖：设置界面的数字框每敲一位就保存一次，不防抖的话填个 23000 会被连弹好几次；连敲合并成最后一次，且同一时间只允许一个提醒在飞。  
 同版补了**子任务等待的可见性**：主 Agent 是「请求 → 本地执行工具 → 再请求」的循环，子任务就是其中一个工具，所以子任务运行期间主任务本来就没有请求在飞——这不是中断。但状态栏原先只停在「正在执行工具 runSubtask…」，几分钟不动很容易被当成卡死。现在子任务开始时写明「主任务等待其结果（等待期间主任务不发送请求，属正常）」，子任务每推进一步状态栏同步「主任务等待中 · 子任务 N：…」，返回时提示「结果回填主任务，继续推理」。smoke 里按请求顺序做了回归：主请求 → 子请求 → 主请求（带 SUBTASK RESULT），子任务上下文不含主历史，全程 busy 不中断。  

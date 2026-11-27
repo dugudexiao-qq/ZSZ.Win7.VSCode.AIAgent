@@ -873,11 +873,28 @@ try {
     assert.strictEqual(depth, 0, 'every rule must be closed');
   });
 
+  /* ---- v1.13.2 面板顶部的定时任务清单：只动样式，不能引入 Win7 跑不动的特性 ---- */
+  check('schedule strip: compact, theme-only, no clock glyph that Win7 may render as tofu', function () {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.css'), 'utf8');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
+    assert.ok(/\.schedlist\s*\{/.test(css) && /\.sched-head\s*\{/.test(css) && /\.sched-row\s*\{/.test(css),
+      'the strip needs header + row styles');
+    assert.ok(/\.sched-row\.disabled/.test(css), 'a paused task must have its own muted style');
+    assert.ok(html.indexOf('id="schedlist"') !== -1 && html.indexOf('id="scheditems"') !== -1,
+      'the panel HTML must carry the strip containers');
+    /* 上一版按用户要求去掉了闹钟图标；这里不许把 U+23F0 / U+25F7 之类的字形塞回来。 */
+    const strip = html.slice(html.indexOf('id="schedlist"'), html.indexOf('id="schedlist"') + 600);
+    assert.ok(!/[\u23F0\u25F7\u26F5]/.test(strip), 'no clock glyph: Win7 Segoe UI Symbol may not have it');
+    assert.ok(/case 'schedules'/.test(js) && /type: 'scheduleManage'/.test(js),
+      'the webview must render the list and send the clicked id back to the host');
+  });
+
   /* ---- manifest ---- */
 
-  check('manifest: 1.13.1, no built-in endpoint/model, 25 commands, all activation events', function () {
+  check('manifest: 1.13.2, no built-in endpoint/model, 25 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.13.1');
+    assert.strictEqual(manifest.version, '1.13.2');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');

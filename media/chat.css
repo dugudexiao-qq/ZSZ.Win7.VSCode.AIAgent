@@ -229,6 +229,90 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
 .membar.warn .membar-text { color: var(--vscode-editorWarning-foreground, #cca700); }
 .membar.full .membar-fill { background: var(--vscode-errorForeground, #f14c4c); }
 .membar.full .membar-text { color: var(--vscode-errorForeground, #f14c4c); }
+
+/* 定时任务清单（v1.13.2）：有任务时贴在记忆条下方，折叠成一行；点开看每条
+ * 的时间和摘要，点某条直达管理。无任务时整条 hidden，不浪费对话空间。
+ * 只用主题变量和细边框，和顶部开关/记忆条同一套视觉语言。 */
+.schedlist {
+  flex: 0 0 auto;
+  margin: 0 10px 4px 10px;
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  overflow: hidden;
+}
+.sched-head {
+  display: flex;
+  align-items: center;
+  column-gap: 8px;
+  width: 100%;
+  padding: 4px 9px;
+  font-size: 11px;
+  text-align: left;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.sched-head:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.12)); }
+.sched-count {
+  flex: 0 0 auto;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.sched-next {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+}
+.sched-caret {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  font-size: 10px;
+}
+.schedlist.open .sched-caret { transform: rotate(180deg); }
+.sched-items {
+  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  max-height: 168px;
+  overflow-y: auto;
+}
+.sched-row {
+  display: flex;
+  flex-direction: column;
+  row-gap: 1px;
+  width: 100%;
+  padding: 5px 9px;
+  font-size: 11px;
+  text-align: left;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--vscode-panel-border, transparent);
+  cursor: pointer;
+}
+.sched-row:last-child { border-bottom: 0; }
+.sched-row:hover { background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12)); }
+.sched-row-when {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-textLink-foreground, var(--vscode-foreground));
+}
+.sched-row-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sched-row.disabled .sched-row-when,
+.sched-row.disabled .sched-row-text {
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  opacity: 0.65;
+}
+.sched-empty {
+  padding: 5px 9px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+}
 #messages {
   flex: 1;
   overflow-y: auto;

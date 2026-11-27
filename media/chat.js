@@ -25,6 +25,11 @@
   var lessonsBtn = document.getElementById('lessons');
   var profilesBtn = document.getElementById('profiles');
   var schedBtn = document.getElementById('schedbtn');
+  var schedList = document.getElementById('schedlist');
+  var schedHead = document.getElementById('schedhead');
+  var schedCount = document.getElementById('schedcount');
+  var schedNext = document.getElementById('schednext');
+  var schedItems = document.getElementById('scheditems');
   var attachEl = document.getElementById('attachments');
   /* 标题旁的 4 个运行开关（写入模式 / 写入确认 / 命令确认 / 子任务）。
    * 常看常切，所以常驻图标 + 悬停说明，状态变化只改图标与 class。 */
@@ -285,6 +290,52 @@
     var h = d.getHours();
     var m = d.getMinutes();
     return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
+
+  /* ---- 已排定的定时任务清单（v1.13.2）----
+   * 宿主线程把排了什么、下次几点跑格式化好发过来；这里只负责摆出来。
+   * 折叠状态留在前端：用户收起后不该每次 state 刷新又弹开。 */
+  var schedExpanded = false;
+  var schedJobs = [];
+
+  function renderSchedules(items) {
+    schedJobs = Array.isArray(items) ? items.slice() : [];
+    if (!schedList) { return; }
+    if (!schedJobs.length) {
+      schedList.hidden = true;
+      return;
+    }
+    schedList.hidden = false;
+    schedCount.textContent = '定时任务 ' + schedJobs.length;
+    /* 折叠时也要能一眼看到最早那条什么时候跑，否则「定时任务 3」没有信息量。 */
+    var first = schedJobs[0];
+    schedNext.textContent = (first.disabled ? '已暂停 · ' : '') + first.when + first.gap;
+    schedList.title = schedJobs.map(function (j) {
+      return (j.disabled ? '[已暂停] ' : '') + j.when + j.gap + ' · ' + j.repeat + ' · ' + j.text;
+    }).join('\n');
+
+    schedItems.innerHTML = '';
+    schedJobs.forEach(function (job) {
+      var row = document.createElement('button');
+      row.className = 'sched-row' + (job.disabled ? ' disabled' : '');
+      row.type = 'button';
+      row.title = job.full || (job.text + '｜' + job.repeat);
+      var when = document.createElement('span');
+      when.className = 'sched-row-when';
+      when.textContent = job.when + job.gap + ' · ' + job.repeat +
+        (job.disabled ? ' · 已暂停' : '');
+      var text = document.createElement('span');
+      text.className = 'sched-row-text';
+      text.textContent = job.short || job.text;
+      row.appendChild(when);
+      row.appendChild(text);
+      row.addEventListener('click', function () {
+        vscode.postMessage({ type: 'scheduleManage', id: job.id });
+      });
+      schedItems.appendChild(row);
+    });
+    schedItems.hidden = !schedExpanded;
+    schedHead.setAttribute('aria-expanded', schedExpanded ? 'true' : 'false');
   }
 
   /* 撤回条目（v1.10）：本轮 Agent 真实写入了文件时，在回复下方给一行
@@ -966,6 +1017,14 @@
       vscode.postMessage({ type: 'scheduleDraft', text: text });
     });
   }
+  if (schedHead) {
+    schedHead.addEventListener('click', function () {
+      schedExpanded = !schedExpanded;
+      schedItems.hidden = !schedExpanded;
+      schedList.className = 'schedlist' + (schedExpanded ? ' open' : '');
+      schedHead.setAttribute('aria-expanded', schedExpanded ? 'true' : 'false');
+    });
+  }
   if (flagWrite) {
     flagWrite.addEventListener('click', function () { vscode.postMessage({ type: 'writeMode' }); });
   }
@@ -1410,6 +1469,9 @@
         break;
       case 'memory':
         applyMemory(msg.memory);
+        break;
+      case 'schedules':
+        renderSchedules(msg.items);
         break;
       case 'busy':
         if (msg.value) {

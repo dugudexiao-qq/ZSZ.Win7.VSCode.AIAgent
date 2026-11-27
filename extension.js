@@ -318,6 +318,8 @@ function activate(context) {
       dirty = true;
     });
     if (dirty) { await runtime.saveSchedules(jobs); }
+    /* 到点后清单要跟着变：一次性任务消失、每天任务跳到明天、错过的标出跳过。 */
+    if (dirty) { provider.postSchedules(); }
 
     firing.forEach(function (job) {
       runtime.log('scheduled job fired: ' + job.id + ' (' + schedulerLib.fmtClock(job.at) + ')');
@@ -415,6 +417,7 @@ function activate(context) {
     jobs.push(job);
     const saved = await runtime.saveSchedules(jobs);
     armSchedules();
+    provider.postSchedules();
     if (!saved) {
       vscode.window.showErrorMessage(APP + ': 定时任务没能写入 globalState，重启后会丢失。');
       return;
@@ -426,9 +429,15 @@ function activate(context) {
       schedulerLib.describe(job, Date.now()) + '。到点前请保持 VS Code 开着。');
   }
 
-  async function manageSchedules() {
+  async function manageSchedules(arg) {
     const now = Date.now();
     const jobs = runtime.getSchedules();
+    /* 面板顶部的定时任务清单点进来时带 id：直接定位那条，省掉再选一次的麻烦。 */
+    const wantedId = arg && typeof arg === 'object' ? String(arg.id || '') : '';
+    const target = wantedId ? jobs.filter(function (j) { return j.id === wantedId; })[0] : null;
+    if (target) {
+      return manageOneJob(target, jobs, now);
+    }
     if (!jobs.length) {
       const add = await vscode.window.showInformationMessage(
         APP + ': 还没有定时任务。先把任务写在对话输入框，再从 「···」菜单选「定时发送…」。',
@@ -457,6 +466,12 @@ function activate(context) {
     }
     const job = jobs.filter(function (j) { return j.id === pick.jobId; })[0];
     if (!job) { return; }
+    return manageOneJob(job, jobs, now);
+  }
+
+  /* 单条任务的操作菜单。清单里点一条直达这里，QuickPick 列表选中也走这里；
+   * 任何一次变更都顺手刷新面板顶部的展示，否则删了/暂停了图标还亮着。 */
+  async function manageOneJob(job, jobs, now) {
     const actions = [
       { label: '$(play) 立即执行一次', action: 'run' },
       { label: (job.enabled === false ? '$(debug-start) 恢复定时' : '$(debug-pause) 暂停定时'), action: 'toggle' },
@@ -471,6 +486,7 @@ function activate(context) {
       job.lastResult = 'manual';
       await runtime.saveSchedules(jobs);
       provider.runScheduled(job.text, { at: now });
+      provider.postSchedules();
       vscode.window.showInformationMessage(APP + ': 已立即执行「' + schedulerLib.shortText(job.text, 20) + '」。');
       return;
     }
@@ -481,6 +497,7 @@ function activate(context) {
       }
       await runtime.saveSchedules(jobs);
       armSchedules();
+      provider.postSchedules();
       vscode.window.showInformationMessage(APP + ': 「' + schedulerLib.shortText(job.text, 20) + '」' +
         (job.enabled ? '已恢复定时：' + schedulerLib.describe(job, Date.now()) : '已暂停。'));
       return;
@@ -490,6 +507,7 @@ function activate(context) {
     if (answer !== '删除') { return; }
     await runtime.saveSchedules(jobs.filter(function (j) { return j.id !== job.id; }));
     armSchedules();
+    provider.postSchedules();
     vscode.window.showInformationMessage(APP + ': 定时任务已删除。');
   }
 

@@ -251,6 +251,7 @@ class ChatViewProvider {
     this._pending = [];
     queued.forEach((msg) => { this._post(msg, false); });
     this.postState();
+    this.postSchedules();
 
     /* 面板一出现就在后台把文件索引跑起来，用户第一次打 @ 时不用等遍历。
      * 失败无所谓：真打 @ 时会重来一次并把原因显示出来。 */
@@ -361,6 +362,16 @@ class ChatViewProvider {
       '<div id="membar" class="membar" role="progressbar" aria-label="上下文记忆占用" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
         '<div class="membar-track"><div id="memfill" class="membar-fill"></div></div>' +
         '<span id="memtext" class="membar-text">记忆 —</span>' +
+      '</div>\n' +
+      /* 定时任务清单：有任务时常驻在记忆条下方，一眼看见排了什么、下次几点；
+       * 没有任务时整条隐藏，不占对话空间。点标题展开/收起，点某条直达管理。 */
+      '<div id="schedlist" class="schedlist" hidden>' +
+        '<button id="schedhead" class="sched-head" type="button" aria-expanded="false" title="展开 / 收起定时任务清单">' +
+          '<span id="schedcount" class="sched-count">定时任务</span>' +
+          '<span id="schednext" class="sched-next"></span>' +
+          '<span class="sched-caret" aria-hidden="true">▾</span>' +
+        '</button>' +
+        '<div id="scheditems" class="sched-items" hidden></div>' +
       '</div>\n' +
       '<div id="messages" aria-live="polite"></div>\n' +
       '<div class="statusbar"><span id="phaseDot" class="pdot"></span><span id="phaseText" class="ptext">就绪</span><span id="timer" class="timer"></span></div>\n' +
@@ -513,6 +524,31 @@ class ChatViewProvider {
       maxHistoryMessages: config.maxHistoryMessages,
       timeoutSec: Math.round(config.timeoutMs / 1000)
     }, false);
+  }
+
+  /* 已排定的定时任务：面板顶部常驻一条清单，让用户随时看见「设了什么、
+   * 下次几点跑」。格式化全在宿主做（webview 里没有 scheduler 模块），
+   * 前端只负责把字符串摆出来——这样倒计时/重复规则的口径和 QuickPick 完全一致。 */
+  postSchedules() {
+    const now = Date.now();
+    const jobs = runtime.getSchedules();
+    const items = jobs.map((job) => {
+      const when = schedulerLib.describeAt(job.at, now);
+      const gap = job.at > now
+        ? '（还有 ' + schedulerLib.humanizeGap(job.at - now) + '）'
+        : '（已到期）';
+      return {
+        id: job.id,
+        when: when,
+        gap: gap,
+        repeat: job.kind === schedulerLib.DAILY ? '每天' : '仅一次',
+        disabled: job.enabled === false,
+        short: schedulerLib.shortText(job.text, 48),
+        text: String(job.text || '').replace(/\s+/g, ' ').trim(),
+        full: schedulerLib.describe(job, now)
+      };
+    });
+    this._post({ type: 'schedules', items: items }, false);
   }
 
   prefill(text) {
@@ -695,6 +731,9 @@ class ChatViewProvider {
           this._postTo(entry, { type: 'delta', text: this._liveReplyText });
         }
         this.postState();
+        /* 定时任务清单和 replay 同理：挂载时那次可能在脚本监听就位前发出而丢失，
+         * ready 握手后再定向补一次，刚打开面板就能看到已排定的任务。 */
+        this.postSchedules();
         this._postAttachments(entry);
         break;
       case 'mentionQuery':
@@ -718,6 +757,11 @@ class ChatViewProvider {
       case 'scheduleDraft':
         /* 面板把输入框里的任务交给宿主，由宿主弹时间选择器（命令也能走同一条路）。 */
         return vscode.commands.executeCommand('win7Agent.scheduleTask', { text: String(msg.text || '') });
+      case 'scheduleManage':
+        /* 点顶部清单里的某条：直接打开那条任务的操作菜单（带 id 定位）。 */
+        return vscode.commands.executeCommand('win7Agent.manageSchedules', { id: String(msg.id || '') });
+      case 'scheduleRefresh':
+        return this.postSchedules();
       case 'stop':
         if (this._cts) { this._cts.cancel(); }
         break;

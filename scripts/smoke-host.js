@@ -465,7 +465,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.13.1');
+  assert.strictEqual(info.version, '1.13.2');
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -575,6 +575,8 @@ async function main() {
    * 藏进菜单或放在滚动区里都看不见。 */
   assert.ok(/id="membar"[\s\S]*id="memfill"[\s\S]*id="messages"/.test(view.webview.html),
     'the memory bar must sit between the header and the transcript');
+  assert.ok(/id="schedlist"[\s\S]*id="schedhead"[\s\S]*id="scheditems"[\s\S]*id="messages"/.test(view.webview.html),
+    'the scheduled-task strip must sit above the transcript, not inside the composer');
   assert.ok(rowHtml.indexOf('id="keybtn"') === -1, 'Set key must not sit among the composer buttons any more');
   assert.ok(rowHtml.indexOf('id="newchat"') === -1,
     'the separate new-chat button must be gone (new chat lives at the top of the session list)');
@@ -810,7 +812,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.13.1');
+  assert.strictEqual(state.version, '1.13.2');
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1638,6 +1640,37 @@ async function main() {
   assert.ok(events.filter(function (e) { return e.type === 'delta'; })
     .map(function (e) { return e.text; }).join('').indexOf('排队的那条也跑完了') !== -1,
     'the queued run must produce its answer');
+
+  /* v1.13.2：已排定的任务要在面板顶部可见——考察 host 是否把任务格式化后
+   * 推给 webview（前端只摆字符串），以及点某条是否带 id 直达管理。 */
+  const schedJobs = [
+    { id: 'job-a', text: '检查所有失效链接', kind: 'daily', time: '02:00', at: Date.now() + 7 * 3600e3 },
+    { id: 'job-b', text: '暂停的那条', kind: 'once', at: Date.now() + 86400e3, enabled: false }
+  ];
+  await runtime.saveSchedules(schedJobs);
+  events.length = 0;
+  registeredProvider.postSchedules();
+  const schedMsg = events.filter(function (e) { return e.type === 'schedules'; })[0];
+  assert.ok(schedMsg, 'the host must push the schedule list to the panel');
+  assert.strictEqual(schedMsg.items.length, 2, 'every scheduled task must be listed');
+  assert.ok(schedMsg.items[0].when && schedMsg.items[0].gap && schedMsg.items[0].repeat,
+    'each item must carry a ready-to-show time, countdown and repeat rule');
+  assert.strictEqual(schedMsg.items[0].repeat, '每天', 'a daily job must be labelled 每天');
+  assert.strictEqual(schedMsg.items[1].disabled, true, 'a paused job must be marked disabled');
+  assert.ok(schedMsg.items[0].short && schedMsg.items[0].full,
+    'the list needs both a short snippet and a full tooltip');
+
+  events.length = 0;
+  await viewMessageHandler({ type: 'ready' });
+  assert.ok(events.some(function (e) { return e.type === 'schedules' && e.items.length === 2; }),
+    'the ready handshake must re-send the schedule list (mount-time post may be lost)');
+
+  executedCommands.length = 0;
+  await viewMessageHandler({ type: 'scheduleManage', id: 'job-b' });
+  const manageCmd = executedCommands.filter(function (c) { return c[0] === 'win7Agent.manageSchedules'; })[0];
+  assert.ok(manageCmd, 'clicking a list row must open the task manager');
+  assert.strictEqual(manageCmd[1].id, 'job-b', 'the clicked task id must reach the manager');
+  console.log('  PASS  scheduled tasks are listed in the panel with time / repeat / paused state');
 
   /* 任务本身落 globalState：扩展重载后按 at 重新排，不会丢。 */
   await runtime.saveSchedules([{ text: '每天夜里跑一次', kind: 'daily', time: '02:00', at: Date.now() + 3600e3 }]);
