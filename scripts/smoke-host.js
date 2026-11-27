@@ -465,7 +465,7 @@ async function main() {
   const info = runtime.getExtensionInfo();
   assert.strictEqual(info.name, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(info.author, 'dugudexiao');
-  assert.strictEqual(info.version, '1.13.2');
+  assert.strictEqual(info.version, manifest.version);
   await commands['win7Agent.about']();
   await commands['win7Agent.showPrompt']();
   await commands['win7Agent.manageRules']();
@@ -812,7 +812,7 @@ async function main() {
   const state = events.filter(function (e) { return e.type === 'state'; }).pop();
   assert.strictEqual(state.hasKey, true);
   assert.strictEqual(state.author, 'dugudexiao');
-  assert.strictEqual(state.version, '1.13.2');
+  assert.strictEqual(state.version, manifest.version);
   assert.strictEqual(state.appName, 'ZSZ.Win7.VSCode.AIAgent');
   assert.strictEqual(state.timeoutSec, 1000);
   assert.ok(state.ruleCount >= 3, '2 default rules + 1 remembered rule');
@@ -1641,6 +1641,32 @@ async function main() {
     .map(function (e) { return e.text; }).join('').indexOf('排队的那条也跑完了') !== -1,
     'the queued run must produce its answer');
 
+  /* 到点时正在跑：待执行队列要能被用户看见、撤销、调顺序，且落盘。 */
+  registeredProvider._busy = true;
+  events.length = 0;
+  await registeredProvider.runScheduled('待执行第一条', { at: Date.now() });
+  await registeredProvider.runScheduled('待执行第二条', { at: Date.now() });
+  assert.strictEqual(registeredProvider._autoPending.length, 2, 'two due jobs must both stay in the queue');
+  const queuedMsg = events.filter(function (e) { return e.type === 'autoQueue'; }).pop();
+  assert.ok(queuedMsg && queuedMsg.items.length === 2, 'the panel must receive the visible pending queue');
+  assert.ok(queuedMsg.items[0].id && queuedMsg.items[1].id, 'each queued job needs an id for undo/reorder');
+  assert.strictEqual(runtime.getPendingRuns().length, 2, 'the pending queue must survive a reload');
+  const firstId = queuedMsg.items[0].id;
+  const secondId = queuedMsg.items[1].id;
+  events.length = 0;
+  await viewMessageHandler({ type: 'autoQueueAction', id: secondId, action: 'up' });
+  assert.strictEqual(registeredProvider._autoPending[0].text, '待执行第二条',
+    'up must move the queued job ahead of the current one');
+  await viewMessageHandler({ type: 'autoQueueAction', id: firstId, action: 'remove' });
+  assert.strictEqual(registeredProvider._autoPending.length, 1, 'remove must drop exactly one queued job');
+  assert.strictEqual(runtime.getPendingRuns()[0].text, '待执行第二条', 'undo must be persisted');
+  assert.ok(events.some(function (e) { return e.type === 'autoQueue' && e.items.length === 1; }),
+    'the panel must repaint after undo/reorder');
+  registeredProvider._autoPending.length = 0;
+  await runtime.savePendingRuns([]);
+  registeredProvider._busy = false;
+  console.log('  PASS  due jobs queue while busy, with visible undo / reorder and persistence');
+
   /* v1.13.2：已排定的任务要在面板顶部可见——考察 host 是否把任务格式化后
    * 推给 webview（前端只摆字符串），以及点某条是否带 id 直达管理。 */
   const schedJobs = [
@@ -1670,7 +1696,21 @@ async function main() {
   const manageCmd = executedCommands.filter(function (c) { return c[0] === 'win7Agent.manageSchedules'; })[0];
   assert.ok(manageCmd, 'clicking a list row must open the task manager');
   assert.strictEqual(manageCmd[1].id, 'job-b', 'the clicked task id must reach the manager');
-  console.log('  PASS  scheduled tasks are listed in the panel with time / repeat / paused state');
+
+  /* 清单里的 ↑ / ✕ 直接改数据：顺序要落盘，撤销要少一条。 */
+  await commands['win7Agent.manageSchedules']({ id: 'job-a', action: 'down' });
+  assert.deepStrictEqual(runtime.getSchedules().map(function (j) { return j.id; }), ['job-b', 'job-a'],
+    'down must persist a new execution order');
+  nextConfirmAnswer = '撤销';
+  await commands['win7Agent.manageSchedules']({ id: 'job-b', action: 'delete' });
+  assert.deepStrictEqual(runtime.getSchedules().map(function (j) { return j.id; }), ['job-a'],
+    'delete must remove exactly the chosen job');
+  assert.ok(chatJs.indexOf("type: 'scheduleAction'") !== -1 &&
+    chatJs.indexOf("type: 'autoQueueAction'") !== -1 &&
+    chatJs.indexOf('renderAutoQueue') !== -1 &&
+    chatCss.indexOf('.sched-act') !== -1,
+    'the panel needs inline undo/reorder controls for both schedule lists');
+  console.log('  PASS  scheduled tasks can be undone and reordered from the panel');
 
   /* 任务本身落 globalState：扩展重载后按 at 重新排，不会丢。 */
   await runtime.saveSchedules([{ text: '每天夜里跑一次', kind: 'daily', time: '02:00', at: Date.now() + 3600e3 }]);

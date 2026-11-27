@@ -383,6 +383,57 @@ async function saveSchedules(list) {
   }
 }
 
+/* ---- 到点但正在回复的定时任务 ----
+ * 任务到点时会从 schedules 里移走（一次性任务本来就该消失），但这一轮若还在
+ * 跑，它并没有执行完。这里把「待执行」落盘：用户能撤销/调顺序，重载窗口也
+ * 不会丢。和 schedules 分开存，免得 armSchedules 把它当成新的到点任务。 */
+const PENDING_RUNS_KEY = 'win7Agent.pendingScheduledRuns';
+const MAX_PENDING_RUNS = 20;
+let pendingRunsCache = [];
+
+function normalizePendingRuns(list) {
+  const src = Array.isArray(list) ? list : [];
+  const out = [];
+  const seen = Object.create(null);
+  src.forEach(function (item) {
+    if (!item || typeof item !== 'object') { return; }
+    const text = String(item.text || '').trim();
+    const id = String(item.id || '');
+    if (!text || !id || seen[id]) { return; }
+    seen[id] = true;
+    out.push({
+      id: id,
+      text: text.slice(0, scheduler.MAX_TEXT),
+      scheduled: Number(item.scheduled) || Date.now(),
+      queuedAt: Number(item.queuedAt) || Date.now()
+    });
+  });
+  return out.slice(0, MAX_PENDING_RUNS);
+}
+
+function getPendingRuns() {
+  if (!ctx) { return normalizePendingRuns(pendingRunsCache); }
+  try {
+    pendingRunsCache = normalizePendingRuns(ctx.globalState.get(PENDING_RUNS_KEY, []));
+  } catch (e) {
+    log('globalState unavailable, pending scheduled runs are kept in memory only: ' + e.message);
+  }
+  return pendingRunsCache.map(function (item) { return Object.assign({}, item); });
+}
+
+async function savePendingRuns(list) {
+  const items = normalizePendingRuns(list);
+  pendingRunsCache = items;
+  if (!ctx) { return false; }
+  try {
+    await ctx.globalState.update(PENDING_RUNS_KEY, items);
+    return true;
+  } catch (e) {
+    log('globalState.update failed, pending scheduled runs kept in memory only: ' + e.message);
+    return false;
+  }
+}
+
 /* ---- named model profiles (persisted in globalState) ----
  * 每个 profile 是一套「名字 + 服务地址 + 模型 + key」。切换 = 把 baseUrl/model
  * 写进设置、key 写进 SecretStorage。key 存在 profile 里只落在本机 globalState，
@@ -625,6 +676,8 @@ module.exports = {
   saveSessions,
   getSchedules,
   saveSchedules,
+  getPendingRuns,
+  savePendingRuns,
   normalizeSessions,
   MAX_SESSIONS,
   MAX_SESSION_MESSAGES,

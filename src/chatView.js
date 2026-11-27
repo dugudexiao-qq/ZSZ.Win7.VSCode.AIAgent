@@ -61,8 +61,10 @@ class ChatViewProvider {
     this._liveReplyText = '';
     this._memoryTimer = null;
     /* 定时任务撞上正在回复时的等待队列：宿主侧排队，这一轮结束立刻接着跑。
-     * 前端那条队列是「用户手动打的字」，两者互不干扰。 */
-    this._autoPending = [];
+     * 前端那条队列是「用户手动打的字」，两者互不干扰。落盘是为了让用户在
+     * 面板里撤销/调顺序，重载窗口后待执行任务也不会凭空消失。 */
+    this._autoPending = runtime.getPendingRuns();
+    this._autoDrainTimer = null;
     this._lastAnswer = '';
     /* @ 引用的文件清单：自己遍历工作区（不依赖搜索索引），带 60s 缓存。
      * 刚打开窗口时 VS Code 的 search provider 往往还没就绪，findFiles 会
@@ -252,6 +254,7 @@ class ChatViewProvider {
     queued.forEach((msg) => { this._post(msg, false); });
     this.postState();
     this.postSchedules();
+    this.postAutoQueue();
 
     /* 面板一出现就在后台把文件索引跑起来，用户第一次打 @ 时不用等遍历。
      * 失败无所谓：真打 @ 时会重来一次并把原因显示出来。 */
@@ -372,6 +375,15 @@ class ChatViewProvider {
           '<span class="sched-caret" aria-hidden="true">▾</span>' +
         '</button>' +
         '<div id="scheditems" class="sched-items" hidden></div>' +
+      '</div>\n' +
+      /* 到点时主任务还在跑的任务进这里：可撤销、可上移/下移，和上面的
+       * 「尚未到点」清单分开，免得用户以为那条任务还没开始。 */
+      '<div id="autolist" class="schedlist autolist" hidden>' +
+        '<div class="sched-head auto-head">' +
+          '<span id="autocount" class="sched-count">定时待执行</span>' +
+          '<span id="autonext" class="sched-next">当前回复结束后依次执行</span>' +
+        '</div>' +
+        '<div id="autoitems" class="sched-items"></div>' +
       '</div>\n' +
       '<div id="messages" aria-live="polite"></div>\n' +
       '<div class="statusbar"><span id="phaseDot" class="pdot"></span><span id="phaseText" class="ptext">就绪</span><span id="timer" class="timer"></span></div>\n' +
@@ -549,6 +561,19 @@ class ChatViewProvider {
       };
     });
     this._post({ type: 'schedules', items: items }, false);
+  }
+
+  /* 到点却赶上主任务还在跑的清单。用 id 标识每条，前端的撤销/排序按钮
+   * 把 id 传回来，宿主只对这一条动刀，不会误伤正在执行的那一轮。 */
+  postAutoQueue() {
+    const items = this._autoPending.map((item) => ({
+      id: item.id,
+      text: schedulerLib.shortText(item.text, 48),
+      full: String(item.text || '').replace(/\s+/g, ' ').trim(),
+      at: Number(item.scheduled) || 0,
+      when: schedulerLib.fmtClock(item.scheduled || Date.now()) + ' 已到点'
+    }));
+    this._post({ type: 'autoQueue', items: items }, false);
   }
 
   prefill(text) {
@@ -734,6 +759,7 @@ class ChatViewProvider {
         /* 定时任务清单和 replay 同理：挂载时那次可能在脚本监听就位前发出而丢失，
          * ready 握手后再定向补一次，刚打开面板就能看到已排定的任务。 */
         this.postSchedules();
+        this.postAutoQueue();
         this._postAttachments(entry);
         break;
       case 'mentionQuery':
@@ -760,8 +786,15 @@ class ChatViewProvider {
       case 'scheduleManage':
         /* 点顶部清单里的某条：直接打开那条任务的操作菜单（带 id 定位）。 */
         return vscode.commands.executeCommand('win7Agent.manageSchedules', { id: String(msg.id || '') });
+      case 'scheduleAction':
+        /* ↑ / ↓ / ✕：直接执行，不再多弹一层菜单。 */
+        return vscode.commands.executeCommand('win7Agent.manageSchedules', {
+          id: String(msg.id || ''), action: String(msg.action || '')
+        });
       case 'scheduleRefresh':
         return this.postSchedules();
+      case 'autoQueueAction':
+        return this._autoQueueAction(String(msg.id || ''), String(msg.action || ''));
       case 'stop':
         if (this._cts) { this._cts.cancel(); }
         break;
@@ -1048,28 +1081,68 @@ class ChatViewProvider {
     if (!body.trim()) { return Promise.resolve(false); }
     const info = { scheduled: (meta && meta.at) || Date.now() };
     if (this._busy) {
-      this._autoPending.push({ text: body, meta: info });
+      const item = {
+        id: 'q' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e4).toString(36),
+        text: body,
+        scheduled: info.scheduled,
+        queuedAt: Date.now()
+      };
+      this._autoPending.push(item);
+      runtime.savePendingRuns(this._autoPending);
+      this.postAutoQueue();
       this._post({ type: 'notice', text: '[定时] 正在回复中，定时任务已排队，这一轮结束立即执行（等待 ' +
-        this._autoPending.length + ' 条）' }, false);
+        this._autoPending.length + ' 条；可在面板上撤销 / 调顺序）' }, false);
       return Promise.resolve(false);
     }
     return this._handleSend(body, null, info);
   }
 
+  /* 面板上的撤销 / 上移 / 下移：只改宿主里的待执行队列，再落盘 + 重推。 */
+  _autoQueueAction(id, action) {
+    const i = this._autoPending.findIndex((item) => item.id === id);
+    if (i < 0) { return; }
+    let verb = '';
+    if (action === 'remove') {
+      this._autoPending.splice(i, 1);
+      verb = '已撤销';
+    } else if (action === 'up' && i > 0) {
+      const prev = this._autoPending[i - 1];
+      this._autoPending[i - 1] = this._autoPending[i];
+      this._autoPending[i] = prev;
+      verb = '已上移';
+    } else if (action === 'down' && i < this._autoPending.length - 1) {
+      const next = this._autoPending[i + 1];
+      this._autoPending[i + 1] = this._autoPending[i];
+      this._autoPending[i] = next;
+      verb = '已下移';
+    } else {
+      return;
+    }
+    runtime.savePendingRuns(this._autoPending);
+    this.postAutoQueue();
+    this._post({ type: 'notice', text: '[定时] 待执行任务' + verb }, false);
+  }
+
   _drainAutoQueue() {
-    if (this._busy || !this._autoPending.length) { return; }
-    const next = this._autoPending.shift();
+    if (this._busy || !this._autoPending.length || this._autoDrainTimer) { return; }
     const self = this;
     /* 让 finally 里的 done / state 先落到 webview，再起下一轮。 */
-    setTimeout(function () {
-      if (self._busy) { self._autoPending.unshift(next); return; }
-      self._handleSend(next.text, null, next.meta).catch(function (e) {
+    this._autoDrainTimer = setTimeout(function () {
+      self._autoDrainTimer = null;
+      /* 这 60ms 里用户可能又发了一条，或撤销/重排了队列：重新检查再出手。 */
+      if (self._busy || !self._autoPending.length) { return; }
+      const next = self._autoPending[0];
+      self._autoPending.shift();
+      runtime.savePendingRuns(self._autoPending);
+      self.postAutoQueue();
+      self._handleSend(next.text, null, { scheduled: next.scheduled }).catch(function (e) {
         runtime.log('queued scheduled run failed: ' + (e && e.message ? e.message : e));
       });
     }, 60);
   }
 
   dispose() {
+    if (this._autoDrainTimer) { clearTimeout(this._autoDrainTimer); this._autoDrainTimer = null; }
     if (this._cts) { this._cts.cancel(); this._cts.dispose(); }
   }
 }

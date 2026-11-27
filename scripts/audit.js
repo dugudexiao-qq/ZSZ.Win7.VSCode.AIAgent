@@ -1393,6 +1393,23 @@ async function main() {
     assert.ok(/^明天 23:30$/.test(sched.describeAt(soon, now)), sched.describeAt(soon, now));
   });
 
+  await test('scheduler: manual order survives a state round-trip', function () {
+    const sched = require('../src/scheduler');
+    const now = Date.now();
+    const jobs = sched.normalizeJobs([
+      { id: 'a', text: '先跑的', kind: 'once', at: now + 3600e3 },
+      { id: 'b', text: '后跑的', kind: 'once', at: now + 7200e3 }
+    ], now);
+    assert.deepStrictEqual(jobs.map(function (j) { return j.id; }), ['a', 'b']);
+    const moved = sched.reorderJobs(jobs, 'b', -1, now);
+    assert.deepStrictEqual(moved.map(function (j) { return j.id; }), ['b', 'a'],
+      '上移 must change the execution order');
+    const reloaded = sched.normalizeJobs(JSON.parse(JSON.stringify(moved)), now);
+    assert.deepStrictEqual(reloaded.map(function (j) { return j.id; }), ['b', 'a'],
+      'a reload must not sort the jobs back by their fire time');
+    assert.strictEqual(sched.nextOrder(reloaded), 3, 'a new job must append after the manual order');
+  });
+
   await runtime.setWriteMode(false);
   editor = null;
   fs.rmSync(root, { recursive: true, force: true });

@@ -638,17 +638,46 @@ check('scheduled tasks render as clickable rows with time, repeat and paused sta
   assert.strictEqual(els.scheditems.children.length, 2, 'one row per scheduled task');
   const row0 = els.scheditems.children[0];
   const row1 = els.scheditems.children[1];
-  assert.ok(/每天/.test(row0.children[0].textContent) && !/disabled/.test(row0.className),
+  assert.ok(/每天/.test(row0.children[0].children[0].textContent) && !/disabled/.test(row0.className),
     'an enabled task shows its repeat rule');
-  assert.ok(/已暂停/.test(row1.children[0].textContent) && /disabled/.test(row1.className),
+  assert.ok(/已暂停/.test(row1.children[0].children[0].textContent) && /disabled/.test(row1.className),
     'a paused task must be visibly marked, not silently listed');
-  assert.strictEqual(row0.children[1].textContent, '检查所有失效链接', 'the text snippet must be shown');
+  assert.strictEqual(row0.children[0].children[1].textContent, '检查所有失效链接', 'the text snippet must be shown');
+  assert.strictEqual(row0.children[1].children.length, 3, 'each row needs up / down / undo controls');
+
+  posted.length = 0;
+  fire(row0.children[1].children[2], 'click');
+  assert.strictEqual(posted[0].type, 'scheduleAction', 'the ✕ control must ask the host to undo');
+  assert.strictEqual(posted[0].action, 'delete');
+  assert.strictEqual(posted[0].id, 'j1');
 
   posted.length = 0;
   fire(row0, 'click');
   assert.strictEqual(posted.length, 1, 'clicking a row must open the manager');
   assert.strictEqual(posted[0].type, 'scheduleManage');
   assert.strictEqual(posted[0].id, 'j1', 'the clicked task id must reach the host, not just any task');
+});
+
+check('a due job waiting on the current turn is visible and editable', function () {
+  hostMessage({ type: 'autoQueue', items: [
+    { id: 'q1', text: '等待中的批处理', when: '02:00 已到点', full: '等待中的批处理' },
+    { id: 'q2', text: '第二条', when: '02:01 已到点', full: '第二条' }
+  ] });
+  assert.strictEqual(els.autolist.hidden, false, 'the pending queue must appear while a turn is running');
+  assert.ok(/定时待执行 2/.test(els.autocount.textContent), 'the pending count must be visible');
+  assert.strictEqual(els.autoitems.children.length, 2, 'one row per queued job');
+  const row = els.autoitems.children[1];
+  assert.ok(/第二条/.test(row.children[0].textContent), 'queued text must be shown');
+  posted.length = 0;
+  fire(row.children[1].children[0], 'click');
+  assert.strictEqual(posted[0].type, 'autoQueueAction');
+  assert.strictEqual(posted[0].action, 'up');
+  assert.strictEqual(posted[0].id, 'q2');
+  fire(row.children[1].children[2], 'click');
+  assert.strictEqual(posted[1].action, 'remove', 'queued jobs must be undoable before they start');
+
+  hostMessage({ type: 'autoQueue', items: [] });
+  assert.strictEqual(els.autolist.hidden, true, 'an empty pending queue must not take panel space');
 });
 
 check('the strip collapses by default and remembers the user choice across refreshes', function () {

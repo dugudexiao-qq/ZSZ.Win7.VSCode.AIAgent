@@ -2,7 +2,7 @@
   "name": "win7-ai-agent",
   "displayName": "ZSZ.Win7.VSCode.AIAgent",
   "description": "适用于 Windows 7 + VS Code 1.70.x 的本地大模型 AI Agent。",
-  "version": "1.13.2",
+  "version": "1.13.3",
   "publisher": "dugudexiao",
   "icon": "media/icon.png",
   "author": {

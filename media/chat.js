@@ -30,6 +30,10 @@
   var schedCount = document.getElementById('schedcount');
   var schedNext = document.getElementById('schednext');
   var schedItems = document.getElementById('scheditems');
+  var autoList = document.getElementById('autolist');
+  var autoCount = document.getElementById('autocount');
+  var autoNext = document.getElementById('autonext');
+  var autoItems = document.getElementById('autoitems');
   var attachEl = document.getElementById('attachments');
   /* 标题旁的 4 个运行开关（写入模式 / 写入确认 / 命令确认 / 子任务）。
    * 常看常切，所以常驻图标 + 悬停说明，状态变化只改图标与 class。 */
@@ -297,6 +301,21 @@
    * 折叠状态留在前端：用户收起后不该每次 state 刷新又弹开。 */
   var schedExpanded = false;
   var schedJobs = [];
+  var autoJobs = [];
+
+  /* 清单里的小按钮：与整行的「打开管理」分开，点击不冒泡到行。 */
+  function schedAction(label, title, handler) {
+    var btn = document.createElement('button');
+    btn.className = 'sched-act';
+    btn.type = 'button';
+    btn.textContent = label;
+    btn.title = title;
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      handler();
+    });
+    return btn;
+  }
 
   function renderSchedules(items) {
     schedJobs = Array.isArray(items) ? items.slice() : [];
@@ -315,11 +334,14 @@
     }).join('\n');
 
     schedItems.innerHTML = '';
-    schedJobs.forEach(function (job) {
-      var row = document.createElement('button');
+    schedJobs.forEach(function (job, index) {
+      var row = document.createElement('div');
       row.className = 'sched-row' + (job.disabled ? ' disabled' : '');
-      row.type = 'button';
+      row.setAttribute('role', 'button');
+      row.setAttribute('tabindex', '0');
       row.title = job.full || (job.text + '｜' + job.repeat);
+      var info = document.createElement('div');
+      info.className = 'sched-row-info';
       var when = document.createElement('span');
       when.className = 'sched-row-when';
       when.textContent = job.when + job.gap + ' · ' + job.repeat +
@@ -327,15 +349,68 @@
       var text = document.createElement('span');
       text.className = 'sched-row-text';
       text.textContent = job.short || job.text;
-      row.appendChild(when);
-      row.appendChild(text);
-      row.addEventListener('click', function () {
-        vscode.postMessage({ type: 'scheduleManage', id: job.id });
+      info.appendChild(when);
+      info.appendChild(text);
+      var acts = document.createElement('div');
+      acts.className = 'sched-row-actions';
+      acts.appendChild(schedAction('↑', '上移（更早执行）', function () {
+        vscode.postMessage({ type: 'scheduleAction', id: job.id, action: 'up' });
+      }));
+      acts.appendChild(schedAction('↓', '下移（更晚执行）', function () {
+        vscode.postMessage({ type: 'scheduleAction', id: job.id, action: 'down' });
+      }));
+      acts.appendChild(schedAction('✕', '撤销这条定时任务', function () {
+        vscode.postMessage({ type: 'scheduleAction', id: job.id, action: 'delete' });
+      }));
+      row.appendChild(info);
+      row.appendChild(acts);
+      function open() { vscode.postMessage({ type: 'scheduleManage', id: job.id }); }
+      row.addEventListener('click', open);
+      row.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
       });
       schedItems.appendChild(row);
     });
     schedItems.hidden = !schedExpanded;
     schedHead.setAttribute('aria-expanded', schedExpanded ? 'true' : 'false');
+  }
+
+  /* 到点却赶上主任务还在跑：这一块平时隐藏，出现时默认展开。用户可以直接
+   * 在这里撤销或调整顺序，不必等当前回复跑完。 */
+  function renderAutoQueue(items) {
+    if (!autoList) { return; }
+    autoJobs = Array.isArray(items) ? items.slice() : [];
+    autoList.hidden = autoJobs.length === 0;
+    if (!autoJobs.length) { return; }
+    autoCount.textContent = '定时待执行 ' + autoJobs.length;
+    autoNext.textContent = '当前回复结束后依次执行';
+    autoItems.innerHTML = '';
+    autoJobs.forEach(function (job, index) {
+      var row = document.createElement('div');
+      row.className = 'sched-row auto-row';
+      row.title = job.full || job.text;
+      var info = document.createElement('div');
+      info.className = 'sched-row-info';
+      var when = document.createElement('span');
+      when.className = 'sched-row-when';
+      when.textContent = (index + 1) + '. ' + (job.when || '已到点');
+      var text = document.createElement('span');
+      text.className = 'sched-row-text';
+      text.textContent = job.text || '';
+      info.appendChild(when);
+      info.appendChild(text);
+      var acts = document.createElement('div');
+      acts.className = 'sched-row-actions';
+      function act(action) {
+        vscode.postMessage({ type: 'autoQueueAction', id: job.id, action: action });
+      }
+      acts.appendChild(schedAction('↑', '上移', function () { act('up'); }));
+      acts.appendChild(schedAction('↓', '下移', function () { act('down'); }));
+      acts.appendChild(schedAction('✕', '撤销', function () { act('remove'); }));
+      row.appendChild(info);
+      row.appendChild(acts);
+      autoItems.appendChild(row);
+    });
   }
 
   /* 撤回条目（v1.10）：本轮 Agent 真实写入了文件时，在回复下方给一行
@@ -1472,6 +1547,9 @@
         break;
       case 'schedules':
         renderSchedules(msg.items);
+        break;
+      case 'autoQueue':
+        renderAutoQueue(msg.items);
         break;
       case 'busy':
         if (msg.value) {

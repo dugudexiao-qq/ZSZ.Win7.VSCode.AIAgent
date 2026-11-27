@@ -892,9 +892,9 @@ try {
 
   /* ---- manifest ---- */
 
-  check('manifest: 1.13.2, no built-in endpoint/model, 25 commands, all activation events', function () {
+  check('manifest: versioned, no built-in endpoint/model, 25 commands, all activation events', function () {
     assert.strictEqual(manifest.displayName, 'ZSZ.Win7.VSCode.AIAgent');
-    assert.strictEqual(manifest.version, '1.13.2');
+    assert.ok(/^\d+\.\d+\.\d+$/.test(manifest.version), 'manifest needs a semver version');
     assert.strictEqual(manifest.publisher, 'dugudexiao');
     assert.strictEqual(manifest.author.name, 'dugudexiao');
     assert.strictEqual(manifest.icon, 'media/icon.png', 'marketplace icon must be declared');

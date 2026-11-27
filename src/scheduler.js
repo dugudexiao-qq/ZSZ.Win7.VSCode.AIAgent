@@ -95,6 +95,10 @@ function normalizeJob(job, now) {
     at: at,
     time: kind === DAILY ? (parseClock(time) ? fmtClock(clockOnDay(time, at)) : fmtClock(at)) : '',
     enabled: job.enabled !== false,
+    /* 展示/执行顺序由用户说了算，不能每次读盘都按 at 重排回去。旧数据没有
+     * order，拿 at 当初始值：行为与以前「按时间排序」完全一致，之后上移/下移
+     * 才写入真正的顺序号。 */
+    order: Number.isFinite(Number(job.order)) ? Number(job.order) : at,
     createdAt: Number(job.createdAt) || (now || Date.now()),
     lastRunAt: Number(job.lastRunAt) || 0,
     lastResult: String(job.lastResult || '')
@@ -111,8 +115,30 @@ function normalizeJobs(list, now) {
     seen[clean.id] = true;
     out.push(clean);
   });
-  out.sort(function (a, b) { return a.at - b.at; });
+  out.sort(function (a, b) { return (a.order - b.order) || (a.at - b.at); });
   return out.slice(0, MAX_JOBS);
+}
+
+/** 面板上移/下移：交换后统一编号，normalizeJobs 才能稳定保持这个顺序。 */
+function reorderJobs(list, id, delta, now) {
+  const jobs = normalizeJobs(list, now);
+  const i = jobs.findIndex(function (j) { return j.id === id; });
+  const to = i + Number(delta);
+  if (i < 0 || to < 0 || to >= jobs.length || !delta) { return jobs; }
+  const moved = jobs.splice(i, 1)[0];
+  jobs.splice(to, 0, moved);
+  jobs.forEach(function (job, index) { job.order = index + 1; });
+  return jobs;
+}
+
+/** 下一个任务的顺序号：新任务追加到队尾，不插到用户已经调好的顺序里。 */
+function nextOrder(list) {
+  let max = 0;
+  (Array.isArray(list) ? list : []).forEach(function (job) {
+    const n = Number(job && job.order);
+    if (Number.isFinite(n) && n > max) { max = n; }
+  });
+  return max + 1;
 }
 
 /* 每天任务跑完之后把 at 推到下一次；一次性任务返回 0（调用方负责删掉）。 */
@@ -213,6 +239,8 @@ module.exports = {
   nextDailyAt,
   normalizeJob,
   normalizeJobs,
+  reorderJobs,
+  nextOrder,
   advance,
   plan,
   nextWakeup,
