@@ -1792,9 +1792,9 @@
       case 'done':
         abandonPendingTool('已中断');
         closeThoughtSeg();
-        // Only a successful, non-empty answer turns green. Errors stay red and
-        // cancelled runs are not marked complete. The completion check has the
-        // final say: if this round did nothing, do not print "已完成".
+        // 只有成功且非空的回答才标完成（正文保持原色，仅左侧竖线换强调色）。
+        // 出错仍是红色，被取消的不标完成；自检有最终裁定权：这一轮什么都没做
+        // 就不打印「已完成」。
         if (!hadError && currentBubble) {
           if (lastCheck && lastCheck.level === 'fail') {
             currentBubble.classList.add('conclusion-warn');

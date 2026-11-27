@@ -723,13 +723,23 @@ async function main() {
   const fs = require('fs');
   const chatJs = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
   const chatCss = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.css'), 'utf8');
-  assert.ok(/conclusion-done/.test(chatJs) && /conclusion-flag/.test(chatJs), 'done handler must green-flag the final answer');
-  assert.ok(/hadError/.test(chatJs), 'failed runs must not be green-flagged');
-  assert.ok(/\.msg\.assistant\.conclusion-done/.test(chatCss) && /--vscode-testing-iconPassed/.test(chatCss), 'green conclusion styling must exist');
+  assert.ok(/conclusion-done/.test(chatJs) && /conclusion-flag/.test(chatJs), 'done handler must flag the final answer');
+  assert.ok(/hadError/.test(chatJs), 'failed runs must not be completion-flagged');
+  /* v1.13.7：完成态收敛成冷色语义变量，不再把整段回答染成亮绿。
+   * 正文保持默认前景色，只有左侧竖线换强调色 + 一枚低调标签。 */
+  assert.ok(/--c-accent:\s*var\(--vscode-textLink-foreground/.test(chatCss),
+    'a single cool accent variable must replace the scattered green');
+  assert.ok(!/testing-iconPassed|#89d185/.test(chatCss),
+    'the old bright-green conclusion colour must be gone');
   const doneBlock = (chatCss.match(/\.msg\.assistant\.conclusion-done\s*\{([^}]*)\}/) || [])[1] || '';
-  assert.ok(/color:/.test(doneBlock), 'done state must set a green text color');
-  assert.ok(!/background|border/.test(doneBlock), 'done state must be plain green text (no border / tinted background)');
-  console.log('  PASS  successful answers get a green completion flag; failures stay red');
+  assert.ok(/border-left-color:\s*var\(--c-accent\)/.test(doneBlock),
+    'done state must mark the left rule, not recolour the body text');
+  assert.ok(!/(^|[\s;])color:/.test(doneBlock),
+    'the answer body must keep its normal foreground colour');
+  const flagBlock = (chatCss.match(/\.conclusion-flag\s*\{([^}]*)\}/) || [])[1] || '';
+  assert.ok(/color:\s*var\(--c-accent\)/.test(flagBlock) && /font-size:\s*10px/.test(flagBlock),
+    'completion flag must be a restrained accent tag');
+  console.log('  PASS  completion is a subtle accent rule/tag, not a wall of green; failures stay red');
 
   const agentJs = fs.readFileSync(path.join(__dirname, '..', 'src', 'agent.js'), 'utf8');
   const rulesJs = fs.readFileSync(path.join(__dirname, '..', 'src', 'rules.js'), 'utf8');
@@ -753,7 +763,7 @@ async function main() {
     'confirmation dialogs and their yellow awaiting signal must remain');
   assert.ok(/case 'awaiting'/.test(chatJs) && /ptext awaiting/.test(chatJs), 'webview must render awaiting text in yellow');
   assert.ok(/\.ptext\.awaiting/.test(chatCss) && /\.msg\.awaiting/.test(chatCss) && /editorWarning-foreground/.test(chatCss), 'yellow awaiting styling must exist');
-  console.log('  PASS  pending confirmations are signalled and shown in yellow (green done / red error intact)');
+  console.log('  PASS  pending confirmations are signalled in amber (accent done / red error intact)');
 
   assert.ok(/function enqueue\(/.test(chatJs) && /function pumpQueue\(/.test(chatJs) &&
     /function renderQueue\(/.test(chatJs) && /queueRejected/.test(chatJs),
@@ -1534,7 +1544,7 @@ async function main() {
   assert.strictEqual(claimCheck.verdict, 'false-claim');
   assert.ok(/工具调用 0 次/.test(claimCheck.evidence.join(' ')), 'evidence must state that no tool ran');
   const doneIdx = events.map(function (e) { return e.type; }).indexOf('done');
-  assert.ok(events.indexOf(claimCheck) < doneIdx, 'the verdict must arrive before "done" so the green flag can be suppressed');
+  assert.ok(events.indexOf(claimCheck) < doneIdx, 'the verdict must arrive before "done" so the completion flag can be suppressed');
 
   const checkRoot = fsmod.mkdtempSync(path.join(os.tmpdir(), 'zsz-check-'));
   const savedForCheck = vscodeStub.workspace.workspaceFolders;
@@ -1554,7 +1564,7 @@ async function main() {
   assert.ok(/本轮已更新|存在/.test(realCheck.evidence.join(' ')), 'evidence must confirm the file on disk');
   assert.ok(fsmod.existsSync(path.join(checkRoot, 'out', 'report.txt')));
   assert.ok(/case 'check'/.test(chatJs) && /function addCheck\(/.test(chatJs), 'webview must render the check card');
-  assert.ok(/lastCheck && lastCheck\.level === 'fail'/.test(chatJs), 'a failed check must suppress the green "已完成" flag');
+  assert.ok(/lastCheck && lastCheck\.level === 'fail'/.test(chatJs), 'a failed check must suppress the "已完成" flag');
   assert.ok(/\.msg\.check/.test(chatCss) && /chk-tag-fail/.test(chatCss), 'check card styling must exist');
   await runtime.setWriteConfirm(true);
   await runtime.setWriteMode(false);

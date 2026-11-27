@@ -1,3 +1,17 @@
+/* 统一语义色（科技感 / 简约风）：
+ * 全站只保留「中性前景 + 单一冷色强调 + 琥珀警示 + 珊瑚红错误」四种角色。
+ * 一律映射到 VS Code 主题变量，主题缺失时用 Win7 上稳定的兜底值。
+ * 关键：完成态不再用亮绿——绿色大段文字在深色主题下刺眼且像报错。
+ * 收敛成变量后，改风格只需改这一处，不用满文件找十六进制。 */
+:root {
+  --c-accent: var(--vscode-textLink-foreground, #4aa3df);
+  --c-ok: var(--vscode-textLink-foreground, #4aa3df);
+  --c-warn: var(--vscode-editorWarning-foreground, #c9a227);
+  --c-err: var(--vscode-errorForeground, #d8665a);
+  --c-muted: var(--vscode-descriptionForeground, #9d9d9d);
+  --c-line: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+}
+
 html, body {
   height: 100%;
   margin: 0;
@@ -93,9 +107,9 @@ button.menu-author:hover { background: transparent; text-decoration: underline; 
   white-space: nowrap;
 }
 .menu-item:hover { background: var(--vscode-list-hoverBackground, var(--vscode-toolbar-hoverBackground)); }
-button.menu-item.write-on { color: var(--vscode-testing-iconPassed, #89d185); font-weight: 600; }
-button.menu-item.confirm-off { color: var(--vscode-editorWarning-foreground, #cca700); font-weight: 600; }
-button.menu-item.subtask-on { color: var(--vscode-textLink-foreground, #3794ff); font-weight: 600; }
+button.menu-item.write-on { color: var(--c-ok); font-weight: 600; }
+button.menu-item.confirm-off { color: var(--c-warn); font-weight: 600; }
+button.menu-item.subtask-on { color: var(--c-accent); font-weight: 600; }
 
 .menu-sep {
   height: 1px;
@@ -123,8 +137,8 @@ button.menu-item.subtask-on { color: var(--vscode-textLink-foreground, #3794ff);
   border: 1px solid var(--vscode-panel-border, transparent);
 }
 
-.badge.ok { color: var(--vscode-testing-iconPassed, #89d185); }
-.badge.warn { color: var(--vscode-editorWarning-foreground, #cca700); }
+.badge.ok { color: var(--c-ok); }
+.badge.warn { color: var(--c-warn); }
 
 /* 标题下的 4 个运行开关：状态一律由文字表达（写入：只读 / 命令确认：开），
  * 四个按钮外观完全相同——同一种边框、同一种前景色，不做「开=蓝、风险=黄」
@@ -197,11 +211,14 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
   overflow: hidden;
   background: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
 }
+/* 一条从左到右的极淡渐变，只在同一冷色里做明度变化，不引入第二种色相。 */
 .membar-fill {
   width: 0%;
   height: 100%;
   border-radius: 2px;
-  background: var(--vscode-progressBar-background, #0e70c0);
+  background: linear-gradient(90deg,
+    var(--vscode-progressBar-background, var(--c-accent)),
+    var(--c-accent));
   transition: width 0.2s ease;
 }
 .membar-text {
@@ -209,10 +226,10 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
   white-space: nowrap;
   font-family: var(--vscode-editor-font-family, monospace);
 }
-.membar.warn .membar-fill { background: var(--vscode-editorWarning-foreground, #cca700); }
-.membar.warn .membar-text { color: var(--vscode-editorWarning-foreground, #cca700); }
-.membar.full .membar-fill { background: var(--vscode-errorForeground, #f14c4c); }
-.membar.full .membar-text { color: var(--vscode-errorForeground, #f14c4c); }
+.membar.warn .membar-fill { background: var(--c-warn); }
+.membar.warn .membar-text { color: var(--c-warn); }
+.membar.full .membar-fill { background: var(--c-err); }
+.membar.full .membar-text { color: var(--c-err); }
 
 /* 遗忘 / 压缩清单：默认只在发生裁剪时出现，第一次出现自动展开。
  * 每条只给角色和开头，字体压到 11px，避免长对话里喧宾夺主。 */
@@ -235,7 +252,7 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
   text-align: left;
 }
 .memdetail-head:hover { color: var(--vscode-foreground); }
-.memdetail-count { color: var(--vscode-errorForeground, #f14c4c); }
+.memdetail-count { color: var(--c-err); }
 .memdetail-items {
   max-height: 132px;
   overflow-y: auto;
@@ -258,7 +275,7 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
 }
 .memdetail-role {
   flex: 0 0 auto;
-  color: var(--vscode-textLink-foreground, #3794ff);
+  color: var(--c-accent);
 }
 .memdetail-text {
   flex: 1 1 auto;
@@ -368,7 +385,7 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
 .auto-row:hover { background: transparent; }
 .sched-row-when {
   font-family: var(--vscode-editor-font-family, monospace);
-  color: var(--vscode-textLink-foreground, var(--vscode-foreground));
+  color: var(--c-accent);
 }
 .sched-row-text {
   overflow: hidden;
@@ -434,7 +451,7 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
   padding: 7px 10px 7px 11px;
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, transparent));
-  border-left: 3px solid var(--vscode-textLink-foreground, #3794ff);
+  border-left: 3px solid var(--c-accent);
   border-radius: 6px 2px 2px 6px;
   white-space: pre-wrap;
   position: relative;
@@ -464,7 +481,7 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
 }
 .msg.user::before {
   content: '你';
-  color: var(--vscode-textLink-foreground, #3794ff);
+  color: var(--c-accent);
 }
 .msg.assistant {
   margin-left: 0;
@@ -477,45 +494,34 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
 }
 .msg.assistant::before {
   content: 'AI';
-  color: var(--vscode-descriptionForeground, #9d9d9d);
+  color: var(--c-muted);
 }
 /* 侧边栏被拖窄时缩进要跟着收，否则正文只剩几十像素 */
 @media (max-width: 420px) {
   .msg.user { margin-left: 16px; }
   .msg.assistant { margin-right: 12px; }
 }
-/* Completion is signalled by green text alone — no border, no tinted background. */
+/* 完成态：正文保持默认前景色，让代码/链接/强调各归其位；
+ * 只把左侧竖线换成一束冷色强调，配一枚低调标签。不再把整段回答染绿
+ * ——深色主题下一整屏 green 既刺眼又和「错误红」抢语义。 */
 .msg.assistant.conclusion-done {
-  color: var(--vscode-testing-iconPassed, #89d185);
+  border-left-color: var(--c-accent);
 }
-.msg.assistant.conclusion-done h1,
-.msg.assistant.conclusion-done h2,
-.msg.assistant.conclusion-done h3,
-.msg.assistant.conclusion-done h4,
-.msg.assistant.conclusion-done h5,
-.msg.assistant.conclusion-done h6,
-.msg.assistant.conclusion-done strong,
-.msg.assistant.conclusion-done em,
-.msg.assistant.conclusion-done del,
-.msg.assistant.conclusion-done blockquote,
-.msg.assistant.conclusion-done th,
-.msg.assistant.conclusion-done a { color: inherit; }
 .conclusion-flag {
   display: inline-block;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  color: var(--vscode-testing-iconPassed, #89d185);
+  letter-spacing: 0.04em;
+  color: var(--c-accent);
+  border: 1px solid var(--c-line);
+  border-radius: 3px;
+  padding: 0 5px;
   margin-bottom: 6px;
 }
-.msg.assistant.conclusion-warn { color: var(--vscode-editorWarning-foreground, #cca700); }
-.msg.assistant.conclusion-warn h1,
-.msg.assistant.conclusion-warn h2,
-.msg.assistant.conclusion-warn h3,
-.msg.assistant.conclusion-warn h4,
-.msg.assistant.conclusion-warn strong,
-.msg.assistant.conclusion-warn em,
-.msg.assistant.conclusion-warn a { color: inherit; }
-.conclusion-flag.warn { color: var(--vscode-editorWarning-foreground, #cca700); }
+.msg.assistant.conclusion-warn {
+  border-left-color: var(--c-warn);
+}
+.conclusion-flag.warn { color: var(--c-warn); }
 
 /* ---- completion check card (taskCheck) ----
  * Plain text, no tinted background, no left bar: it sits directly under the
@@ -538,9 +544,9 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
   margin-bottom: 3px;
 }
 .check-tag { font-weight: 600; white-space: nowrap; }
-.chk-tag-ok { color: var(--vscode-testing-iconPassed, #89d185); }
-.chk-tag-warn { color: var(--vscode-editorWarning-foreground, #cca700); }
-.chk-tag-fail { color: var(--vscode-errorForeground, #f14c4c); }
+.chk-tag-ok { color: var(--c-ok); }
+.chk-tag-warn { color: var(--c-warn); }
+.chk-tag-fail { color: var(--c-err); }
 .check-title { color: var(--vscode-foreground); font-weight: 600; }
 .check-text {
   color: var(--vscode-descriptionForeground, var(--vscode-foreground));
@@ -565,10 +571,10 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
 .msg.file { font-size: 11px; opacity: 0.85; border-style: dashed; white-space: pre-wrap; }
 /* Expected refusals (outside workspace, file exists, too large ...) and real
  * failures: colour the label only, no filled background. */
-.msg.tool-fail .tool-head { color: var(--vscode-editorWarning-foreground, #cca700); }
-.msg.tool-block .tool-head { color: var(--vscode-descriptionForeground, #9d9d9d); }
+.msg.tool-fail .tool-head { color: var(--c-warn); }
+.msg.tool-block .tool-head { color: var(--c-muted); }
 .msg.tool .tool-detail { margin-top: 2px; opacity: 0.75; word-break: break-all; }
-.msg.tool .tool-repeat { margin-left: 6px; opacity: 0.8; color: var(--vscode-descriptionForeground, #9d9d9d); }
+.msg.tool .tool-repeat { margin-left: 6px; opacity: 0.8; color: var(--c-muted); }
 /* Sub-task progress: visually distinct from the main conversation. */
 .msg.subtask {
   font-size: 11px;
@@ -576,20 +582,20 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
   margin-left: 12px;
   margin-bottom: 4px;
   white-space: pre-wrap;
-  color: var(--vscode-textLink-foreground, #3794ff);
-  border-left: 2px solid var(--vscode-textLink-foreground, #3794ff);
+  color: var(--c-accent);
+  border-left: 2px solid var(--c-accent);
   background: transparent;
 }
 .msg.error {
-  color: var(--vscode-errorForeground);
+  color: var(--c-err);
   border-color: var(--vscode-editorError-foreground, transparent);
   background: var(--vscode-inputValidation-errorBackground, transparent);
 }
 /* Yellow = paused, waiting for the user's confirmation. Completes the
  * status-color language: yellow pending / green done / red error. */
 .msg.awaiting {
-  color: var(--vscode-editorWarning-foreground, #cca700);
-  border-color: var(--vscode-editorWarning-foreground, #cca700);
+  color: var(--c-warn);
+  border-color: var(--c-warn);
   background: var(--vscode-inputValidation-warningBackground, rgba(204, 167, 0, 0.08));
   border-left-width: 3px;
   font-weight: 600;
@@ -611,7 +617,7 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
 .msg strong { font-weight: 600; color: var(--vscode-foreground); }
 .msg em { font-style: italic; }
 .msg del { opacity: 0.7; }
-.msg a { color: var(--vscode-textLink-foreground, #3794ff); text-decoration: none; }
+.msg a { color: var(--c-accent); text-decoration: none; }
 .msg a:hover { text-decoration: underline; }
 
 .msg ul, .msg ol { margin: 6px 0 8px; padding-left: 22px; }
@@ -621,7 +627,7 @@ button.author:hover { background: transparent; text-decoration: underline; opaci
 .msg blockquote {
   margin: 8px 0;
   padding: 4px 10px;
-  border-left: 3px solid var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888));
+  border-left: 3px solid var(--vscode-textBlockQuote-border, var(--c-line));
   background: var(--vscode-textBlockQuote-background, transparent);
   color: var(--vscode-textBlockQuote-foreground, var(--vscode-foreground));
 }
@@ -699,7 +705,7 @@ button.seg-toggle {
   padding: 2px 6px;
   font-family: inherit;
   font-size: 11px;
-  color: var(--vscode-descriptionForeground, #9d9d9d);
+  color: var(--c-muted);
   background: transparent;
   border: none;
 }
@@ -721,9 +727,9 @@ button.seg-toggle:hover {
 
 .msg.seg-tool .seg-label { color: var(--vscode-foreground); opacity: 0.85; }
 .msg.seg-tool.running .seg-label::after { content: ''; }
-.msg.seg-tool.done { border-left-color: var(--vscode-testing-iconPassed, #89d185); }
-.msg.seg-tool.tool-fail { border-left-color: var(--vscode-errorForeground, #f48771); }
-.msg.seg-tool.tool-block { border-left-color: var(--vscode-editorWarning-foreground, #cca700); }
+.msg.seg-tool.done { border-left-color: var(--c-ok); }
+.msg.seg-tool.tool-fail { border-left-color: var(--c-err); }
+.msg.seg-tool.tool-block { border-left-color: var(--c-warn); }
 
 .seg-body {
   margin: 2px 0 4px 6px;
@@ -755,23 +761,23 @@ button.seg-toggle:hover {
   height: 7px;
   flex: 0 0 7px;
   border-radius: 50%;
-  background: var(--vscode-descriptionForeground, #888);
+  background: var(--c-muted);
   opacity: 0.5;
 }
 
 .pdot.active {
-  background: var(--vscode-testing-iconPassed, #89d185);
+  background: var(--c-accent);
   opacity: 1;
   animation: pulse 1.2s ease-in-out infinite;
 }
 
 .pdot.done {
-  background: var(--vscode-testing-iconPassed, #89d185);
+  background: var(--c-ok);
   opacity: 1;
 }
 
 .pdot.awaiting {
-  background: var(--vscode-editorWarning-foreground, #cca700);
+  background: var(--c-warn);
   opacity: 1;
   animation: pulse 0.9s ease-in-out infinite;
 }
@@ -787,9 +793,9 @@ button.seg-toggle:hover {
   opacity: 0.85;
 }
 
-.ptext.done { color: var(--vscode-testing-iconPassed, #89d185); opacity: 1; font-weight: 600; }
-.ptext.failed { color: var(--vscode-errorForeground); opacity: 1; }
-.ptext.awaiting { color: var(--vscode-editorWarning-foreground, #cca700); opacity: 1; font-weight: 600; }
+.ptext.done { color: var(--c-ok); opacity: 1; font-weight: 600; }
+.ptext.failed { color: var(--c-err); opacity: 1; }
+.ptext.awaiting { color: var(--c-warn); opacity: 1; font-weight: 600; }
 
 .timer { opacity: 0.75; white-space: nowrap; font-family: var(--vscode-editor-font-family, monospace); }
 
@@ -1036,9 +1042,9 @@ button.sess-item {
   border-radius: 3px;
 }
 
-/* 新建：和会话行分开，蓝字提示这是个动作而不是一条记录 */
+/* 新建：和会话行分开，强调色提示这是个动作而不是一条记录 */
 button.sess-item.sess-new {
-  color: var(--vscode-textLink-foreground, #3794ff);
+  color: var(--c-accent);
   font-size: 12px;
   padding: 6px;
 }
@@ -1063,7 +1069,7 @@ button.sess-del {
   line-height: 16px;
   font-size: 13px;
   text-align: center;
-  color: var(--vscode-descriptionForeground, #9d9d9d);
+  color: var(--c-muted);
   background: transparent;
   border: none;
   border-radius: 3px;
@@ -1076,7 +1082,7 @@ button.sess-del:focus {
 }
 
 button.sess-del:hover {
-  color: var(--vscode-errorForeground, #f48771);
+  color: var(--c-err);
   background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.3));
 }
 
@@ -1100,7 +1106,7 @@ button.sess-del:hover {
 .s-meta {
   flex: 0 0 auto;
   font-size: 10px;
-  color: var(--vscode-descriptionForeground, #9d9d9d);
+  color: var(--c-muted);
 }
 
 .sess-row.active .s-meta {
@@ -1113,7 +1119,7 @@ button.sess-del:hover {
   font-size: 11px;
   opacity: 0.8;
   border-style: dotted;
-  color: var(--vscode-descriptionForeground, #9d9d9d);
+  color: var(--c-muted);
 }
 
 /* ---- editable outbound queue ---- */
@@ -1132,7 +1138,7 @@ button.sess-del:hover {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--vscode-editorWarning-foreground, #cca700);
+  color: var(--c-warn);
   margin-bottom: 4px;
 }
 .queue-head span { flex: 1; }
@@ -1190,7 +1196,7 @@ textarea.qedit { margin-bottom: 3px; font-size: 11px; }
 .mention-empty {
   padding: 5px 8px;
   font-size: 11px;
-  color: var(--vscode-descriptionForeground, #9d9d9d);
+  color: var(--c-muted);
   white-space: normal;
 }
 .mention-item {
@@ -1212,7 +1218,7 @@ textarea.qedit { margin-bottom: 3px; font-size: 11px; }
 .mention-retry {
   padding: 3px 8px 5px;
   font-size: 11px;
-  color: var(--vscode-textLink-foreground, #3794ff);
+  color: var(--c-accent);
   cursor: pointer;
 }
 .mention-retry:hover { text-decoration: underline; }
@@ -1240,14 +1246,6 @@ button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-off
 }
 
 .hdr .title { letter-spacing: 0.02em; }
-
-/* 记忆条：一条从左到右的细渐变，比纯色更能表达「容量在流动」。
- * 80% 的黄色、满的红色仍然盖在渐变上（特异性更高），警示语义不变。 */
-.membar-fill {
-  background: linear-gradient(90deg,
-    var(--vscode-progressBar-background, #0e70c0),
-    var(--vscode-textLink-foreground, #3794ff));
-}
 
 /* 滚动条：默认那条又宽又灰，长对话里很抢戏。收成 10px 细条 + 两端留白，
  * 只有滚动或悬停时才看得见。 */
