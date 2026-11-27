@@ -231,7 +231,13 @@ function takeRecent(history, maxMessages, maxChars) {
     picked.unshift(m);
     used += len;
   }
-  return { messages: picked, chars: used, dropped: list.length - picked.length };
+  /* lost 只给界面用来解释「哪些消息不再送给模型」，不参与任何推理。 */
+  return {
+    messages: picked,
+    chars: used,
+    dropped: list.length - picked.length,
+    lost: list.slice(0, list.length - picked.length)
+  };
 }
 
 function subtaskLimit(config) {

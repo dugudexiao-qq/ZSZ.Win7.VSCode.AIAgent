@@ -20,6 +20,13 @@
   var memBar = document.getElementById('membar');
   var memFill = document.getElementById('memfill');
   var memText = document.getElementById('memtext');
+  var memDetail = document.getElementById('memdetail');
+  var memDetailHead = document.getElementById('memdetailhead');
+  var memDetailCount = document.getElementById('memdetailcount');
+  var memDetailItems = document.getElementById('memdetailitems');
+  var memExpanded = false;
+  var memUserToggled = false;
+  var lastMemory = null;
   var authorBtn = document.getElementById('author');
   var rulesBtn = document.getElementById('rules');
   var lessonsBtn = document.getElementById('lessons');
@@ -232,9 +239,9 @@
    * 「定时」两个字本身就说明了一切，不必赌字体。 */
   function scheduleBadge(ts) { return '定时 ' + clockLabel(ts); }
 
-  /* 顶端记忆容量条。percent = 会话历史字符数 / 上下文预算；满了以后更早的
-   * 消息就不再送进模型（自动压缩会先收成一条摘要）。这里只做显示，容量上限
-   * 由宿主按设置算好再发下来，前端不猜。 */
+  /* 顶端记忆状态条。v1.13.4 起不再把「占用 100%」当主信息——满了以后
+   * 数字永远不动，没有意义；真正要说清的是哪些内容已经送不进模型、哪些
+   * 已经被压成摘要。条本身表达「历史里还留着多少能进模型」。 */
   function fmtChars(n) {
     n = Number(n) || 0;
     if (n < 10000) { return String(n); }
@@ -242,50 +249,130 @@
     return (w >= 10 ? Math.round(w) : Math.round(w * 10) / 10) + ' 万';
   }
 
+  function countOf(mem, key, list) {
+    var n = Number(mem[key]);
+    if (!isFinite(n) || n < 0) { n = 0; }
+    return Math.max(Math.round(n), list.length ? list.length : 0);
+  }
+
+  function shortList(items, limit) {
+    var arr = Array.isArray(items) ? items.slice(0, limit) : [];
+    return arr.map(function (it) {
+      return '· ' + (it && it.role ? it.role + '：' : '') + (it && it.text ? it.text : '（内容已省略）');
+    }).join('\n');
+  }
+
+  function renderMemoryDetail(mem) {
+    if (!memDetail || !memDetailCount || !memDetailItems) { return; }
+    if (!mem) {
+      memDetail.hidden = true;
+      return;
+    }
+    var forgotten = Array.isArray(mem.forgotten) ? mem.forgotten : [];
+    var compressed = Array.isArray(mem.compressed) ? mem.compressed : [];
+    var fCount = countOf(mem, 'forgottenCount', forgotten);
+    var cCount = countOf(mem, 'compressedCount', compressed);
+    if (!fCount && !cCount) {
+      memDetail.hidden = true;
+      memDetailItems.hidden = true;
+      return;
+    }
+    /* 第一次出现遗忘/压缩时自动展开，否则用户只会看到一行小字；
+     * 之后如果用户手动收起过，就尊重他的选择。 */
+    if (!memUserToggled) { memExpanded = true; }
+    memDetail.hidden = false;
+    memDetailCount.textContent = '记忆变化 · 遗忘 ' + fCount + ' 条 · 压缩 ' + cCount + ' 条';
+    memDetailItems.hidden = !memExpanded;
+    if (memDetailHead) { memDetailHead.setAttribute('aria-expanded', memExpanded ? 'true' : 'false'); }
+    if (!memExpanded) { return; }
+
+    memDetailItems.innerHTML = '';
+    function addGroup(title, items, max) {
+      if (!items.length) { return; }
+      var group = document.createElement('div');
+      group.className = 'memdetail-group';
+      var head = document.createElement('div');
+      head.className = 'memdetail-title';
+      head.textContent = title;
+      group.appendChild(head);
+      items.slice(0, max).forEach(function (it) {
+        var row = document.createElement('div');
+        row.className = 'memdetail-row';
+        var role = document.createElement('span');
+        role.className = 'memdetail-role';
+        role.textContent = (it && it.role) || '用户';
+        var text = document.createElement('span');
+        text.className = 'memdetail-text';
+        text.textContent = (it && it.text) || '（内容已省略）';
+        row.appendChild(role);
+        row.appendChild(text);
+        group.appendChild(row);
+      });
+      memDetailItems.appendChild(group);
+    }
+    addGroup('已遗忘 · 不再送入模型', forgotten, 8);
+    addGroup('已压缩 · 收进【历史摘要】', compressed, 8);
+  }
+
   function applyMemory(mem) {
     if (!memBar || !memFill || !memText || !mem || typeof mem !== 'object') { return; }
+    lastMemory = mem;
     var pct = Number(mem.percent);
     if (!isFinite(pct)) { pct = 0; }
     pct = Math.max(0, Math.min(100, Math.round(pct)));
     var used = Number(mem.used) || 0;
+    var committed = Number(mem.committed) || used;
     var limit = Number(mem.limit) || 0;
     var msgs = Number(mem.messages) || 0;
-    var dropped = Number(mem.dropped) || 0;
+    var included = Number(mem.included) || 0;
     var live = Number(mem.live) || 0;
-    memFill.style.width = pct + '%';
-    memBar.setAttribute('aria-valuenow', String(pct));
-    var full = dropped > 0 || pct >= 100;
+    var forgotten = Array.isArray(mem.forgotten) ? mem.forgotten : [];
+    var compressed = Array.isArray(mem.compressed) ? mem.compressed : [];
+    var fCount = countOf(mem, 'forgottenCount', forgotten);
+    var cCount = countOf(mem, 'compressedCount', compressed);
+    var loss = fCount > 0 || cCount > 0;
+    /* 有裁剪时条子表示「历史里还留着多少能进模型」；没有裁剪时按占用走。 */
+    var fill = loss && committed > 0
+      ? Math.max(0, Math.min(100, Math.round((included / committed) * 100)))
+      : pct;
+    memFill.style.width = fill + '%';
+    memBar.setAttribute('aria-valuenow', String(fill));
+    var full = loss;
     var warn = !full && pct >= 80;
     memBar.className = 'membar' + (full ? ' full' : (warn ? ' warn' : ''));
 
-    var label = '记忆 ' + pct + '%';
-    if (msgs === 0 && !live) { label = '记忆 0%（新对话）'; }
-    else if (full) { label = '记忆已满 ' + pct + '%'; }
-    else {
-      label += ' · ' + fmtChars(used) + ' / ' + fmtChars(limit);
-      if (live) { label += ' · 生成中'; }
+    var label;
+    if (msgs === 0 && !live) {
+      label = '记忆 · 新对话';
+    } else if (!loss) {
+      label = '记忆 · 完整保留';
+    } else {
+      var parts = [];
+      if (fCount) { parts.push('遗忘 ' + fCount + ' 条'); }
+      if (cCount) { parts.push('压缩 ' + cCount + ' 条'); }
+      label = '记忆 · ' + parts.join(' · ');
     }
+    if (live) { label += ' · 生成中'; }
     memText.textContent = label;
-    /* 读屏只报百分比意义不大，把「用了多少 / 上限多少」一起给它。 */
     memBar.setAttribute('aria-valuetext', label);
 
-    var title = '上下文记忆：' + used + ' / ' + limit + ' 字符（' + pct + '%），共 ' + msgs +
+    var title = '上下文记忆：' + used + ' / ' + limit + ' 字符（占用 ' + pct + '%），共 ' + msgs +
       ' 条消息；本轮会送入最近 ' + (Number(mem.includedMessages) || 0) + ' 条（' +
-      (Number(mem.included) || 0) + ' 字符）。';
+      included + ' 字符）。';
     if (live) {
       title += '其中 ' + live + ' 字符是本轮进行中的临时内容（工具结果 / 正在生成的回复），尚未写入历史。';
     }
-    if (dropped > 0) {
-      title += '更早的 ' + dropped + ' 条已不再参与——AI 会忘掉那部分内容。';
+    if (fCount) {
+      title += '\n已遗忘（不再送入模型）：\n' + shortList(forgotten, 8);
     }
-    if (mem.summarized) {
-      title += '较早的对话已被自动压缩成一条摘要（【历史摘要】），细节以实际文件为准。';
+    if (cCount) {
+      title += '\n已压缩（收进【历史摘要】）：\n' + shortList(compressed, 8);
     }
-    if (pct >= 80 && !full) { title += '接近上限，必要时可清空对话或新开一条。'; }
-    title += '上限由设置 win7Agent.maxContextChars（' + limit + '）与 maxHistoryMessages（' +
+    if (pct >= 80 && !full) { title += '\n接近上限，必要时可清空对话或新开一条。'; }
+    title += '\n上限由设置 win7Agent.maxContextChars（' + limit + '）与 maxHistoryMessages（' +
       (Number(mem.messageLimit) || 0) + '）决定。';
     memBar.title = title;
-
+    renderMemoryDetail(mem);
   }
 
   /* 定时任务的时间戳在历史里是毫秒数，显示成 02:00 就够。 */
@@ -1090,6 +1177,13 @@
         return;
       }
       vscode.postMessage({ type: 'scheduleDraft', text: text });
+    });
+  }
+  if (memDetailHead) {
+    memDetailHead.addEventListener('click', function () {
+      memUserToggled = true;
+      memExpanded = !memExpanded;
+      renderMemoryDetail(lastMemory || { forgotten: [], compressed: [] });
     });
   }
   if (schedHead) {

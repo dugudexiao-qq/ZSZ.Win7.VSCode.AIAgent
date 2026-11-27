@@ -834,6 +834,35 @@ async function main() {
   assert.strictEqual(liveState.used, liveState.committed + 1700, 'used must include the live part');
   registeredProvider._liveReply = 0;
   registeredProvider._liveExtra = 0;
+  /* v1.13.4：容量满格后不再是主信息，宿主必须发「谁被遗忘 / 谁被压缩」。 */
+  const savedMsgLimit = settings['win7Agent.maxHistoryMessages'];
+  const hist = registeredProvider._history;
+  const histLen = hist.length;
+  hist.push(
+    { role: 'user', content: '更早的原始需求' },
+    { role: 'assistant', content: '旧版已经完成的步骤' },
+    { role: 'user', content: '现在的问题' }
+  );
+  settings['win7Agent.maxHistoryMessages'] = 2;
+  const trimmedMemory = registeredProvider._memoryState();
+  settings['win7Agent.maxHistoryMessages'] = savedMsgLimit;
+  hist.length = histLen;
+  assert.ok(trimmedMemory.forgottenCount >= 1 && trimmedMemory.forgotten.length === trimmedMemory.forgottenCount,
+    'trimmed turns must be reported to the panel with a per-message preview');
+  assert.ok(trimmedMemory.forgotten[0].text && trimmedMemory.forgotten[0].role,
+    'each forgotten preview must say who said it and how it started');
+  const probeSummary = {
+    role: 'user',
+    content: '【历史摘要】测试摘要',
+    compressedCount: 7,
+    compressedItems: [{ role: '用户', text: '最早的需求清单' }]
+  };
+  registeredProvider._history.push(probeSummary);
+  const compressedMemory = registeredProvider._memoryState();
+  registeredProvider._history.pop();
+  assert.ok(compressedMemory.compressedCount >= 7, 'compressed turns must be counted, not just flagged');
+  assert.ok(compressedMemory.compressed.some(function (it) { return /最早的需求清单/.test(it.text); }),
+    'the panel must receive what the summary replaced');
   /* v1.13.0：上下文预算不是常用选项，界面上不放按钮；只在动设置或换模型时
    * 提醒一次，且同一组「模型 + 当前值」不重复打扰。 */
   assert.ok(view.webview.html.indexOf('memrec') === -1,

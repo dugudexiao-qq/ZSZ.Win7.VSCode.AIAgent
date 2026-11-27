@@ -27,6 +27,22 @@ const MAX_SUMMARY_INPUT_CHARS = 60000;
 /* Cap for the summary itself. */
 const MAX_SUMMARY_CHARS = 3000;
 
+/* 给面板看的「谁被忘了 / 谁被压缩了」：只留角色 + 一小段开头，
+ * 不把整条旧消息再写进 globalState（那等于压缩了个寂寞）。 */
+function preview(m, limit) {
+  const msg = m && typeof m === 'object' ? m : {};
+  const text = typeof msg.content === 'string' ? msg.content.trim() : '';
+  const max = Number(limit) > 0 ? Math.floor(Number(limit)) : 60;
+  return {
+    role: msg.role === 'assistant' ? '助手' : (msg.role === 'system' ? '系统' : '用户'),
+    text: text.length > max ? text.slice(0, max) + '…' : text
+  };
+}
+
+function isSummary(m) {
+  return !!(m && typeof m.content === 'string' && m.content.indexOf(SUMMARY_MARKER) === 0);
+}
+
 function historyChars(messages) {
   let n = 0;
   for (let i = 0; i < messages.length; i++) {
@@ -76,11 +92,15 @@ function buildSummaryMessages(oldMessages) {
 
 /* Replace history in place with [summary message, ...kept turns]. Returns the
  * summary message so the caller can report sizes. */
-function applySummary(history, keptMessages, summaryText) {
+function applySummary(history, keptMessages, summaryText, meta) {
   const summary = String(summaryText || '').trim().slice(0, MAX_SUMMARY_CHARS);
   const message = {
     role: 'user',
-    content: SUMMARY_MARKER + '以下是更早对话的要点摘要（由模型自动压缩，原始细节以实际文件为准）：\n' + summary
+    content: SUMMARY_MARKER + '以下是更早对话的要点摘要（由模型自动压缩，原始细节以实际文件为准）：\n' + summary,
+    /* v1.13.4：摘要自带「它替掉了谁」，面板才说得清哪些内容已被压缩，
+     * 而不是只报一条笼统的「有摘要」。 */
+    compressedCount: Math.max(0, Number(meta && meta.count) || 0),
+    compressedItems: Array.isArray(meta && meta.items) ? meta.items.slice(0, 12) : []
   };
   history.length = 0;
   history.push(message);
@@ -122,10 +142,34 @@ async function compactIfNeeded(params) {
   }
   if (!summary.trim()) { return { ok: false, error: 'empty summary' }; }
 
+  /* 递归压缩时把上一条摘要记录的旧消息一起带过来；否则用户只能看到
+   * 最近一批，早先被压缩的内容会变成一笔糊涂账。 */
+  let carryCount = 0;
+  const items = [];
+  oldMessages.forEach(function (m) {
+    if (isSummary(m)) {
+      carryCount += Math.max(0, Number(m.compressedCount) || 0);
+      const carried = Array.isArray(m.compressedItems) ? m.compressedItems : [];
+      carried.forEach(function (it) {
+        if (items.length < 12 && it && typeof it.text === 'string') { items.push(it); }
+      });
+      if (!carried.length) {
+        items.push({ role: '摘要', text: '更早的对话（旧版本未保留逐条记录）' });
+      }
+    } else {
+      carryCount += 1;
+      if (items.length < 12) { items.push(preview(m)); }
+    }
+  });
+
   const beforeChars = historyChars(history);
-  const message = applySummary(history, check.recent.messages, summary);
+  const message = applySummary(history, check.recent.messages, summary, {
+    count: carryCount,
+    items: items
+  });
   return {
     ok: true,
+    compressedCount: carryCount,
     dropped: droppedCount,
     kept: check.recent.messages.length,
     summaryChars: message.content.length,
@@ -139,6 +183,8 @@ module.exports = {
   needsCompaction,
   buildSummaryMessages,
   applySummary,
+  preview,
+  isSummary,
   SUMMARY_MARKER,
   MIN_DROPPED,
   MAX_SUMMARY_INPUT_CHARS,

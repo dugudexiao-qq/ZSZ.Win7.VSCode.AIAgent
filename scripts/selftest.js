@@ -740,6 +740,8 @@ try {
     assert.strictEqual(picked.messages[picked.messages.length - 1].content, '最新问题', 'the newest message must survive');
     assert.ok(picked.chars <= 6000, 'budget must be respected: ' + picked.chars);
     assert.strictEqual(picked.dropped, 1, 'the oldest oversized message must be dropped');
+    assert.strictEqual(picked.lost.length, 1, 'the panel must be told which message was dropped');
+    assert.strictEqual(picked.lost[0].content, big, 'and it must be the oldest one, not an arbitrary message');
     const single = takeRecent([{ role: 'user', content: big }], 100, 100);
     assert.strictEqual(single.messages.length, 1, 'a single oversized message is still kept');
     assert.strictEqual(contextCharLimit({ maxContextChars: 8000 }), 8000);

@@ -1104,12 +1104,19 @@ async function main() {
     const history = [];
     for (let i = 0; i < 6; i++) { history.push({ role: 'user', content: 'old ' + i }); }
     const kept = [{ role: 'user', content: 'recent question' }];
-    const msg = compact.applySummary(history, kept, '  要点一\n要点二  ');
+    const meta = { count: 6, items: history.map(function (m) { return compact.preview(m); }) };
+    const msg = compact.applySummary(history, kept, '  要点一\n要点二  ', meta);
     assert.strictEqual(history.length, 2);
     assert.strictEqual(history[0], msg);
     assert.ok(history[0].content.indexOf(compact.SUMMARY_MARKER) === 0);
     assert.ok(/要点一/.test(history[0].content));
     assert.strictEqual(history[1].content, 'recent question');
+    /* v1.13.4：摘要必须记住自己替掉了谁，否则面板只能含糊地说「有摘要」。 */
+    assert.strictEqual(msg.compressedCount, 6);
+    assert.strictEqual(msg.compressedItems.length, 6);
+    assert.ok(/old 0/.test(msg.compressedItems[0].text));
+    assert.ok(msg.compressedItems.every(function (it) { return it.text.length <= 60; }),
+      'previews must stay short enough to persist in globalState');
   });
 
   /* ---- v1.10.0: per-round write snapshots ---- */

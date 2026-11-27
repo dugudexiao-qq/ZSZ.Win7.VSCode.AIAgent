@@ -359,12 +359,18 @@ class ChatViewProvider {
           '<button id="flagSubtask" class="flag" type="button" aria-pressed="false" title="子任务模式：关（点击允许把独立子任务交给子代理）">子任务：关</button>' +
         '</span>' +
       '</div>\n' +
-      /* 记忆容量条：历史里真正能送到模型的部分占预算多少。满了以后更早的
-       * 消息就不再参与（自动压缩会先把它们收成一条摘要），用户能提前看到
-       * 「AI 开始忘事了」，而不是等它答非所问才发现。 */
-      '<div id="membar" class="membar" role="progressbar" aria-label="上下文记忆占用" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
+      /* 记忆条：百分比退到后台，主标题直接说「忘了什么 / 压缩了什么」。
+       * 需要看细节时展开下面的清单，逐条给出角色与开头，而不是盯着 100%。 */
+      '<div id="membar" class="membar" role="progressbar" aria-label="上下文记忆状态" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
         '<div class="membar-track"><div id="memfill" class="membar-fill"></div></div>' +
         '<span id="memtext" class="membar-text">记忆 —</span>' +
+      '</div>\n' +
+      '<div id="memdetail" class="memdetail" hidden>' +
+        '<button id="memdetailhead" class="memdetail-head" type="button" aria-expanded="false" title="展开 / 收起被遗忘或压缩的内容">' +
+          '<span id="memdetailcount" class="memdetail-count">记忆变化</span>' +
+          '<span class="sched-caret" aria-hidden="true">▾</span>' +
+        '</button>' +
+        '<div id="memdetailitems" class="memdetail-items" hidden></div>' +
       '</div>\n' +
       /* 定时任务清单：有任务时常驻在记忆条下方，一眼看见排了什么、下次几点；
        * 没有任务时整条隐藏，不占对话空间。点标题展开/收起，点某条直达管理。 */
@@ -438,6 +444,27 @@ class ChatViewProvider {
     const limit = contextCharLimit(config);
     const msgLimit = historyLimit(config);
     const recent = takeRecent(history, msgLimit, limit);
+    /* v1.13.4：容量百分比本身说明不了问题——满格之后永远停在 100%。
+     * 真正有用的是「谁被挤出了上下文、谁被压成了摘要」，两者都按消息开头
+     * 留一小段，展开就能看，不逼用户悬停一条细进度条猜。 */
+    const forgotten = [];
+    (Array.isArray(recent.lost) ? recent.lost : []).forEach(function (m) {
+      if (!compact.isSummary(m)) { forgotten.push(compact.preview(m)); }
+    });
+    const compressed = [];
+    let compressedCount = 0;
+    history.forEach(function (m) {
+      if (!compact.isSummary(m)) { return; }
+      const carried = Array.isArray(m.compressedItems) ? m.compressedItems : [];
+      const count = Number(m.compressedCount);
+      compressedCount += Number.isFinite(count) && count > 0 ? count : (carried.length || 1);
+      carried.forEach(function (it) {
+        if (compressed.length < 12 && it && typeof it.text === 'string') { compressed.push(it); }
+      });
+      if (!carried.length) {
+        compressed.push({ role: '摘要', text: '较早对话（旧版本未保留逐条记录）' });
+      }
+    });
     /* 这一轮还在跑：工具结果与流式输出已经占着上下文，但还没 push 进 history。
      * 不把它们算进来，进度条就会「一轮只动两次」，看着像坏了。 */
     const live = Math.max(0, (Number(this._liveExtra) || 0) + (Number(this._liveReply) || 0));
@@ -454,6 +481,10 @@ class ChatViewProvider {
       messages: history.length,
       messageLimit: msgLimit,
       dropped: recent.dropped,
+      forgottenCount: forgotten.length,
+      forgotten: forgotten,
+      compressedCount: compressedCount,
+      compressed: compressed,
       summarized: summarized
     };
   }

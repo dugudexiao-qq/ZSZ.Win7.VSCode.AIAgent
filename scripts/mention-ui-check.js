@@ -483,40 +483,71 @@ check('the Send button keeps its name while a reply is running', function () {
 
 /* ---- v1.12.7 顶端记忆容量条 ---- */
 
-check('the memory bar shows how much of the context budget is used', function () {
+check('the memory bar reports what was forgotten or compressed, not a stuck 100%', function () {
   hostMessage({
     type: 'memory',
     memory: {
-      used: 120000, limit: 280000, percent: 43,
-      included: 110000, includedMessages: 9, messages: 12,
-      messageLimit: 100, dropped: 0, summarized: false
+      used: 120000, committed: 120000, limit: 280000, percent: 43,
+      included: 120000, includedMessages: 12, messages: 12,
+      messageLimit: 100, dropped: 0, forgottenCount: 0, forgotten: [],
+      compressedCount: 0, compressed: [], summarized: false
     }
   });
-  assert.strictEqual(els.memfill.style.width, '43%',
-    'the fill must track used/limit, otherwise the bar is decoration');
-  assert.ok(/记忆/.test(els.memtext.textContent) && /43%/.test(els.memtext.textContent),
-    'the label must state the percentage: ' + els.memtext.textContent);
-  assert.ok(/12 万/.test(els.memtext.textContent), 'and the raw size, so 43% is checkable');
+  assert.strictEqual(els.memfill.style.width, '43%', 'without loss the bar still tracks used/limit');
+  assert.ok(/完整保留/.test(els.memtext.textContent),
+    'a healthy context should say so in words: ' + els.memtext.textContent);
+  assert.ok(!/记忆 \d+%|100%/.test(els.memtext.textContent),
+    'the main label must not be a meaningless percentage');
   assert.ok(!/warn|full/.test(els.membar.className), 'mid-range usage must stay neutral');
   assert.ok(/maxContextChars/.test(els.membar.title), 'the tooltip must name the setting that sets the cap');
+  assert.ok(els.memdetail.hidden, 'no loss means no detail list');
 
   /* 80% 起提醒：AI 快开始忘掉开头了。 */
   hostMessage({ type: 'memory', memory: { used: 240000, limit: 280000, percent: 86, messages: 40, dropped: 0, messageLimit: 100 } });
   assert.ok(/warn/.test(els.membar.className), 'past 80% the bar must warn');
   assert.strictEqual(els.memfill.style.width, '86%');
 
-  /* 一旦开始丢旧消息就是「已满」：准确说不是 100%，而是 AI 已经开始忘事。 */
-  hostMessage({ type: 'memory', memory: { used: 300000, limit: 280000, percent: 100, messages: 130, dropped: 12, messageLimit: 100 } });
+  /* 真正有用的信息：谁被遗忘、谁被压缩，并给出可展开的逐条摘要。 */
+  hostMessage({
+    type: 'memory',
+    memory: {
+      used: 300000, committed: 300000, limit: 280000, percent: 100,
+      included: 150000, includedMessages: 8, messages: 130, dropped: 12,
+      messageLimit: 100,
+      forgottenCount: 12,
+      forgotten: [
+        { role: '用户', text: '帮我分析旧版 readFile 的问题' },
+        { role: '助手', text: '先看一下工具协议定义' }
+      ],
+      compressedCount: 40,
+      compressed: [{ role: '用户', text: '最早的需求清单' }]
+    }
+  });
   assert.ok(/full/.test(els.membar.className), 'dropped turns must be flagged, not hidden behind 100%');
-  assert.ok(/记忆已满/.test(els.memtext.textContent), 'the label must say it in words: ' + els.memtext.textContent);
-  assert.ok(/更早的 12 条/.test(els.membar.title), 'the tooltip must say how many turns no longer reach the model');
+  assert.ok(/遗忘 12 条/.test(els.memtext.textContent) && /压缩 40 条/.test(els.memtext.textContent),
+    'the label must name what happened: ' + els.memtext.textContent);
+  assert.ok(!/记忆已满/.test(els.memtext.textContent), 'a stuck "100%" label is not information');
+  assert.strictEqual(els.memfill.style.width, '50%', 'the fill must now show the retained half of history');
+  assert.ok(/已遗忘/.test(els.membar.title) && /readFile/.test(els.membar.title),
+    'the tooltip must say which content no longer reaches the model');
+  assert.ok(/已压缩/.test(els.membar.title) && /需求清单/.test(els.membar.title),
+    'the tooltip must say what was folded into the summary');
+  assert.ok(!els.memdetail.hidden && !els.memdetailitems.hidden,
+    'the first loss must expand the details instead of hiding them in a tooltip');
+  assert.ok(/遗忘 12 条/.test(els.memdetailcount.textContent), 'the detail head must carry the count');
+  assert.ok(els.memdetailitems.children.length >= 2, 'both forgotten and compressed groups must be listed');
 
-  /* 一轮进行中：工具结果与正在生成的回复已经占着上下文，但还没落库。
-   * 条要看得见这部分在长，否则用户会觉得「一整轮都不动」。 */
+  fire(els.memdetailhead, 'click');
+  assert.ok(els.memdetailitems.hidden && els.memdetailhead.getAttribute('aria-expanded') === 'false',
+    'the user can collapse the detail list');
+  fire(els.memdetailhead, 'click');
+  assert.ok(!els.memdetailitems.hidden, 'and open it again');
+
+  /* 一轮进行中：工具结果与正在生成的回复已经占着上下文，但还没落库。 */
   hostMessage({ type: 'memory', memory: { used: 123000, committed: 120000, live: 3000, limit: 280000, percent: 44, messages: 12, dropped: 0 } });
   assert.ok(/生成中/.test(els.memtext.textContent), 'an in-flight turn must be marked as such: ' + els.memtext.textContent);
-  assert.strictEqual(els.memfill.style.width, '44%', 'the bar must include the in-flight characters');
   assert.ok(/3000 字符是本轮进行中/.test(els.membar.title), 'the tooltip must explain the live part: ' + els.membar.title);
+  assert.ok(els.memdetail.hidden, 'clearing the loss must hide the detail list again');
 
   /* 空对话不该显示成「快满了」。 */
   hostMessage({ type: 'memory', memory: { used: 0, limit: 280000, percent: 0, messages: 0, dropped: 0 } });
