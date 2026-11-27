@@ -641,6 +641,14 @@ async function runSubtaskTool(args, config, ctx) {
   const label = '子任务 ' + index + '/' + cap + (depth ? ' · 第' + (depth + 1) + '级' : '') + '：' + goal.slice(0, 70);
   const emit = typeof ctx.emit === 'function' ? ctx.emit : function () {};
   emit({ type: 'subtask', status: 'start', index: index, depth: depth + 1, text: label });
+  /* 主代理的工作方式是「请求 → 拿到完整回复 → 本地执行工具 → 再请求」。
+   * 子任务就是一个工具，所以等待期间主代理本来就不会有请求在飞——这不是
+   * 中断，但必须说出来，否则状态栏停在「正在执行工具 runSubtask…」几分钟，
+   * 看起来就像主任务死了。 */
+  emit({
+    type: 'phase',
+    text: '子任务 ' + index + '/' + cap + ' 运行中，主任务等待其结果（等待期间主任务不发送请求，属正常）…'
+  });
 
   const subConfig = Object.assign({}, config, {
     stream: false,
@@ -676,6 +684,14 @@ async function runSubtaskTool(args, config, ctx) {
         // never the child's busy/progress/stream events.
         if (evt && ['phase', 'tool', 'awaiting', 'error', 'thought'].indexOf(evt.type) !== -1) {
           emit({ type: 'subtaskEvent', subtask: label, event: evt });
+          /* 状态栏跟着子任务走，并一直标明「主任务在等待」：等待几分钟时，
+           * 用户能看到子任务推进到哪一步，而不是对着一行静止的文字猜。 */
+          if (evt.type === 'phase' && evt.text) {
+            emit({
+              type: 'phase',
+              text: '主任务等待中 · 子任务 ' + index + '：' + String(evt.text).slice(0, 60)
+            });
+          }
         }
       }
     });
@@ -684,6 +700,7 @@ async function runSubtaskTool(args, config, ctx) {
   }
   emit({ type: 'subtask', status: 'done', index: index, depth: depth + 1,
     text: label + ' → ' + pathUtils.truncate(result || '(no result)', 80) });
+  emit({ type: 'phase', text: '子任务 ' + index + ' 已返回，结果回填主任务，继续推理…' });
   const left = Math.max(0, cap - index);
   return 'SUBTASK RESULT [' + label + ']:\n' + result + '\n\n' +
     (left > 0

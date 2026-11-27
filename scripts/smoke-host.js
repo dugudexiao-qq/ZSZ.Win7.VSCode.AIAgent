@@ -275,6 +275,8 @@ let failStatus = 503;
  * queueSafe，面板才不会把排队的下一条也一起冻住）。 */
 let delayNext = 0;
 const scriptedResponses = [];
+/* 每次请求的消息体按顺序留底：用来验证主任务 / 子任务到底是谁在发请求。 */
+const requestLog = [];
 const server = http.createServer(function (req, res) {
   let body = '';
   req.on('data', function (chunk) { body += chunk; });
@@ -298,6 +300,7 @@ const server = http.createServer(function (req, res) {
     }
     const parsed = body ? JSON.parse(body) : null;
     lastMessages = (parsed && parsed.messages) || [];
+    requestLog.push({ n: callCount, messages: lastMessages });
     let content;
     if (scriptedResponses.length) {
       content = scriptedResponses.shift();
@@ -966,6 +969,28 @@ async function main() {
   }), 'each subtask result must tell the model how much budget is left');
   assert.ok(events.some(function (e) { return e.type === 'delta' && /已汇总子任务结论/.test(e.text || ''); }),
     'parent must finish only after the subtask results');
+  /* 用户反馈「子任务一开始主任务就像断了、不再和服务器交互」。把请求顺序
+   * 摊开验证：主请求 → 子请求 → 主请求（带回填结果）→ …，中间没有第二个
+   * 主请求，也没有主请求被丢弃。 */
+  const subLog = requestLog.slice(-5);
+  assert.strictEqual(subLog.length, 5, 'two subtasks + three parent calls = five requests');
+  assert.ok(subLog[0].messages.some(function (m) { return /请把核对工作拆成子任务/.test(m.content || ''); }),
+    'request 1 is the parent turn');
+  assert.ok(subLog[1].messages.some(function (m) { return /独立子任务/.test(m.content || ''); }),
+    'request 2 is the CHILD turn: the parent is awaiting a tool result, not streaming');
+  assert.ok(!subLog[1].messages.some(function (m) { return /请把核对工作拆成子任务/.test(m.content || ''); }),
+    'the child context must be isolated from the parent history');
+  assert.ok(/SUBTASK RESULT/.test(subLog[2].messages[subLog[2].messages.length - 1].content || ''),
+    'request 3 is the parent again, carrying the child result: the run was waiting, not interrupted');
+  assert.ok(subLog[3].messages.some(function (m) { return /独立子任务/.test(m.content || ''); }),
+    'request 4 is the second child');
+  assert.ok(/SUBTASK RESULT/.test(subLog[4].messages[subLog[4].messages.length - 1].content || ''),
+    'request 5 is the parent summary call');
+  assert.strictEqual(events.filter(function (e) { return e.type === 'busy' && e.value === false; }).length, 1,
+    'the parent run must stay busy the whole time: the UI timer never stops');
+  assert.ok(events.some(function (e) { return e.type === 'phase' && /主任务等待/.test(e.text || ''); }),
+    'while the child runs, the status bar must SAY the parent is waiting, not look dead');
+  console.log('  PASS  subtask: parent waits (no parent request in flight), then resumes with the child result');
   console.log('  PASS  runSubtask executes an isolated child agent and feeds its conclusion back');
 
   /* v1.11.8: 模型列了 2 项却只委派 1 项就宣布完成时，要自动提醒一次并补完。 */
