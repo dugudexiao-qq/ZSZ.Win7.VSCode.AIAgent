@@ -56,7 +56,7 @@ class ChatViewProvider {
      * 否则一轮里只在发送和结束各跳一次。 */
     this._liveExtra = 0;
     this._liveReply = 0;
-    /* 最小化编辑器标签会销毁 webview。保留本轮已生成的正文，后台运行中
+    /* 编辑器标签关闭 / 面板重建会销毁 webview。保留本轮已生成的正文，
      * 重新打开时先重放历史，再补这一段，不能让用户对着空白面板等。 */
     this._liveReplyText = '';
     this._memoryTimer = null;
@@ -237,13 +237,6 @@ class ChatViewProvider {
       if (part === this._panel) { this._panel = null; }
     });
     webview.onDidReceiveMessage((msg) => this._onMessage(msg, entry));
-    /* 用户也可能从活动栏直接恢复，而不是点底部状态栏。两种入口都要把
-     * 「已最小化」状态清掉，否则恢复后底部还留着一个多余的 Agent。 */
-    if (typeof part.onDidChangeVisibility === 'function') {
-      part.onDidChangeVisibility(() => {
-        if (part.visible && typeof this.onRestore === 'function') { this.onRestore(); }
-      });
-    }
 
     // Replay order matters: first wipe the DOM and lay down the persisted
     // history, THEN replay queued live-run events so in-flight output
@@ -335,7 +328,6 @@ class ChatViewProvider {
       '<div class="hdr">' +
         '<span class="title" title="' + appName + '">ZSZ · AI Agent</span>' +
         '<span id="keystate" class="badge" title="点击查看连接诊断">checking</span>' +
-        '<button id="minimize" class="iconbtn minimize-toggle" type="button" title="最小化 Agent（任务继续在后台运行；可从底部状态栏恢复）" aria-label="最小化 Agent">−</button>' +
         '<button id="menuToggle" class="iconbtn menu-toggle" title="选项" aria-label="选项" aria-expanded="false">···</button>' +
         '<div id="menu" class="menu" hidden>' +
           '<div class="menu-head"><button id="author" class="menu-author" title="© 2026 ' + info.author + ' · MIT 许可 · 反馈：' + info.email + ' · 点击查看关于">© ' + info.author + ' · MIT · v' + info.version + '</button></div>' +
@@ -741,34 +733,8 @@ class ChatViewProvider {
     this._post({ type: 'attachments', items: [] }, false);
   }
 
-  /* busy 同时驱动面板和「最小化后」的底部状态入口。集中变更，避免某条
-   * 提前返回的错误路径忘了把「运行中」改回「已结束」。 */
   _setBusy(value) {
-    const next = Boolean(value);
-    if (this._busy === next) { return; }
-    this._busy = next;
-    if (typeof this.onBusyChange === 'function') {
-      try { this.onBusyChange(next); } catch (e) { runtime.log('minimized status update failed: ' + e); }
-    }
-  }
-
-  /* 真正的最小化必须交给 workbench：只给 webview 内容加 display:none 只会
-   * 留下一片空白，侧栏高度一点也收不回。侧栏直接关闭；编辑器里的聊天标签
-   * 没有「最小化」概念，就关掉这个标签。两者都只销毁视图，Agent 循环、
-   * 会话历史和定时任务都还在 provider / 扩展宿主里继续。 */
-  async _minimize(entry) {
-    if (typeof this.onMinimize === 'function') { this.onMinimize(this._busy); }
-    try {
-      if (entry && entry.part && entry.part === this._panel) {
-        entry.part.dispose();
-      } else {
-        await vscode.commands.executeCommand('workbench.action.closeSidebar');
-      }
-    } catch (err) {
-      if (typeof this.onRestore === 'function') { this.onRestore(); }
-      runtime.log('minimize failed: ' + (err && err.message ? err.message : err));
-      this._post({ type: 'error', text: '最小化失败：' + (err && err.message ? err.message : err) }, false);
-    }
+    this._busy = Boolean(value);
   }
 
   _onMessage(msg, entry) {
@@ -805,8 +771,6 @@ class ChatViewProvider {
       case 'profiles':
         vscode.commands.executeCommand('win7Agent.switchProfile');
         break;
-      case 'minimize':
-        return this._minimize(entry);
       case 'revertSnapshot':
         return this._revertSnapshot(String(msg.id || ''));
       case 'send':

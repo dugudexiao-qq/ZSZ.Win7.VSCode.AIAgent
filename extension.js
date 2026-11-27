@@ -158,45 +158,6 @@ function activate(context) {
   provider = new ChatViewProvider(context.extensionUri);
   function refresh() { return provider.postState(); }
 
-  /* ---- Agent 最小化 ----
-   * 侧栏最小化后仍要有一个不碍事、但找得到的恢复入口。状态栏项只在用户
-   * 主动最小化后出现；正常运行时不常驻，避免再占一块底部空间。 */
-  let agentStatusItem = null;
-  let agentMinimized = false;
-  let agentRan = false;
-  function renderMinimizedAgent() {
-    if (!agentMinimized) {
-      if (agentStatusItem) { agentStatusItem.hide(); }
-      return;
-    }
-    if (!agentStatusItem) {
-      agentStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
-      agentStatusItem.command = 'win7Agent.openChat';
-      context.subscriptions.push(agentStatusItem);
-    }
-    const running = provider._busy === true;
-    agentStatusItem.text = running ? '$(sync~spin) Agent 运行中'
-      : (agentRan ? '$(check) Agent 已结束' : '$(comment-discussion) Agent');
-    agentStatusItem.tooltip = running
-      ? 'Agent 正在后台运行；点击恢复面板（恢复不会中断任务）'
-      : '点击恢复 Agent 面板；最小化不会停止任务';
-    agentStatusItem.show();
-  }
-  provider.onMinimize = function () {
-    agentMinimized = true;
-    renderMinimizedAgent();
-  };
-  provider.onRestore = function () {
-    agentMinimized = false;
-    renderMinimizedAgent();
-  };
-  provider.onBusyChange = function (busy) {
-    if (busy) { agentRan = true; }
-    renderMinimizedAgent();
-  };
-  testHooks.renderMinimizedAgent = renderMinimizedAgent;
-  testHooks.isAgentMinimized = function () { return agentMinimized; };
-
   /* ---- 上下文预算：改设置时提醒一次 ----
    * 历史预算不是常用选项，不该在对话界面里常驻一个「推荐」按钮。改成只在
    * 用户真的动 maxContextChars / maxHistoryMessages，或者换了模型时给一句
@@ -551,7 +512,6 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('win7Agent.openChat', function () {
-      provider.onRestore();
       return vscode.commands.executeCommand('win7Agent.chatView.focus');
     })
   );

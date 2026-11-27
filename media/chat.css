@@ -50,22 +50,6 @@ button.menu-toggle.open, button.menu-toggle:hover {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground, transparent));
 }
 
-/* 最小化是窗口操作，视觉上保持轻量：与菜单一组，不抢主按钮的注意力。
- * 用基本减号字符，不依赖 Win7 可能缺失的 emoji 字体。 */
-button.minimize-toggle {
-  flex: 0 0 auto;
-  min-width: 24px;
-  padding: 0 6px 2px 6px;
-  font-size: 16px;
-  line-height: 18px;
-  border-radius: 4px;
-}
-button.minimize-toggle:hover {
-  color: var(--vscode-foreground);
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground, transparent));
-  border-color: var(--vscode-focusBorder, var(--vscode-panel-border, transparent));
-}
-
 .menu {
   position: absolute;
   top: calc(100% - 2px);

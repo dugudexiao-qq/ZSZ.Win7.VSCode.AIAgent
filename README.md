@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.13.4-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.13.5-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -47,9 +47,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.13.4** 的附件 `zsz-win7-vscode-aiagent-1.13.4.vsix`（约 200 KB）
-   （直链：[Releases/download/v1.13.4](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.13.4/zsz-win7-vscode-aiagent-1.13.4.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.13.4.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.13.5** 的附件 `zsz-win7-vscode-aiagent-1.13.5.vsix`（约 200 KB）
+   （直链：[Releases/download/v1.13.5](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.13.5/zsz-win7-vscode-aiagent-1.13.5.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.13.5.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)：[发行版页](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases) 与 GitHub 逐版对应（每个版本都带 `.vsix` 附件），也可以在文件页的 `dist/` 里下最新一版。
@@ -69,7 +69,6 @@
 
 ## 使用要点
 
-- **最小化**：点标题栏右侧 `−` 收起整个侧栏，不停止当前任务；VS Code 底部状态栏会显示「Agent 运行中 / 已结束」，点一下恢复。编辑器里的聊天标签也可最小化，后台运行中恢复时会一并还原历史和已生成内容
 - **记忆状态条**（标题栏与对话之间）：正常时显示 `记忆 · 完整保留`，回复中追加「生成中」；开始遗忘后显示 `记忆 · 遗忘 N 条 · 压缩 M 条`，并自动展开清单，逐条列出被挤出/被摘要的消息开头；悬停可看字符数、消息条数、本轮实际送入几条，以及是哪项设置决定上限
 - **上下文预算提醒**（只在改设置时出现，不占界面）：改 `maxContextChars` / `maxHistoryMessages` 或换模型时，按 `model` 推断窗口并比对（8k≈6000 字符、32k≈2.3 万、128k≈9 万，上限 20 万）；偏离 20% 以上才弹一句，点「设为推荐值」会把字符数与条数一起写好。同一组「模型 + 当前值」只提醒一次，选「保留当前」后不再啰嗦，模型名认不出来则完全不提
 - **4 个运行开关**（标题栏下方）：写入（只读/可写）、写入确认、命令确认、子任务
@@ -168,6 +167,7 @@ feed 的内容很宽松，认这三种形态之一即可：
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.13.5**：移除标题栏的最小化按钮及配套状态栏恢复入口（该交互有 bug）。编辑器标签关闭 / 面板重建时的历史与未写完正文续传仍然保留，重开后不会丢失正在生成的回复。
 - **v1.13.4**：记忆条不再停在毫无意义的「100%」。主标题改为 `完整保留` 或 `遗忘 N 条 · 压缩 M 条`，首次发生裁剪时自动展开清单，逐条显示被挤出上下文或被压成摘要的消息角色与开头；压缩摘要本身会记住它替掉了哪些消息（递归压缩时合并旧记录），重开 VS Code 仍说得清。百分比退到悬停说明里，进度条改为表达「历史中还留着多少能进模型」。
 - **v1.13.3**：定时任务清单新增**撤销与排序**。每条右侧有 `↑ / ↓ / ✕`，可上移、下移、撤销；顺序会落盘，重载后不会被时间重排覆盖。管理菜单同步提供上移/下移/撤销。到点时如果 Agent 还在回复，任务不会丢，会进入清单下方的**定时待执行**区，面板上同样能撤销和调顺序，当前一轮结束后依次接着跑；待执行队列也落盘，重开 VS Code 仍在。
 - **v1.13.2**：已排定的定时任务现在**在面板上可见**。记忆条下方常驻一条折叠的清单：标题显示条数与最近一次的执行时间，展开后逐条列出时间、倒计时、每天/仅一次、任务摘要，暂停的条目明确标出「已暂停」并淡化显示；点某条直接打开那条任务的「立即执行 / 暂停 / 删除」，不必再去命令面板重新找。新建、删除、暂停、到点触发后清单自动刷新，没有任务时整条隐藏，不占对话空间。清单只显示排了什么——VS Code 关着不会执行这点仍然不变。

@@ -555,17 +555,14 @@ check('the memory bar reports what was forgotten or compressed, not a stuck 100%
   assert.ok(/新对话/.test(els.memtext.textContent));
 });
 
-/* ---- Agent 最小化：交给宿主关闭真正的侧栏 ---- */
-check('minimize posts one host request and closes an open menu', function () {
-  assert.ok(els.minimize, 'the header must expose a minimize button');
-  els.menu.hidden = true;
-  fire(els.menuToggle, 'click');
-  assert.strictEqual(els.menu.hidden, false, 'precondition: menu is open');
-  const before = posted.length;
-  fire(els.minimize, 'click');
-  assert.strictEqual(posted.length, before + 1);
-  assert.strictEqual(posted[posted.length - 1].type, 'minimize');
-  assert.strictEqual(els.menu.hidden, true, 'the dropdown must not remain open in a hidden view');
+/* ---- v1.13.5：最小化按钮有 bug，整个入口撤掉 ---- */
+check('the header no longer exposes a minimize button', function () {
+  const chatViewSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'chatView.js'), 'utf8');
+  assert.ok(chatViewSrc.indexOf('id="minimize"') === -1,
+    'the header must not render the buggy minimize button');
+  assert.ok(src.indexOf("getElementById('minimize')") === -1,
+    'no click handler should be left for a button that does not exist');
+  assert.ok(!els.minimize, 'the UI stub must never have been asked for a minimize button');
 });
 
 /* ---- v1.13.0 上下文预算不再占用界面：只在改设置时提醒 ---- */

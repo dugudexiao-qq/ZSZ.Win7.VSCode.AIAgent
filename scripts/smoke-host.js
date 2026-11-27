@@ -516,36 +516,20 @@ async function main() {
   assert.ok(/markdown\.js/.test(view.webview.html), 'markdown renderer must be injected into the webview');
   assert.ok(/ZSZ\.Win7\.VSCode\.AIAgent/.test(view.webview.html), 'new app name must be in the webview');
   ['id="rules"', 'id="progress"', 'id="messages"', 'id="importbtn"', 'id="exportbtn"',
-    'id="menuToggle"', 'id="menu"', 'id="minimize"', 'id="flagWrite"', 'id="flagWriteConfirm"', 'id="flagShellConfirm"', 'id="flagSubtask"',
+    'id="menuToggle"', 'id="menu"', 'id="flagWrite"', 'id="flagWriteConfirm"', 'id="flagShellConfirm"', 'id="flagSubtask"',
     'id="sessionBtn"', 'id="sessionMenu"', 'id="keybtn"', 'id="clear"',
     'id="queue"', 'id="panelbtn"', 'id="endpoint"', 'id="settings"'].forEach(function (id) {
     assert.ok(view.webview.html.indexOf(id) !== -1, 'webview must contain ' + id);
   });
-  /* 最小化要关闭真正的侧栏，而不是只隐藏 webview 里的 DOM。底部入口只在
-   * 最小化后出现，并随任务从「运行中」切到「已结束」；恢复后立即隐藏。 */
-  assert.strictEqual(statusItems.length, 0, 'the status-bar restore entry must not be permanent clutter');
-  await viewMessageHandler({ type: 'minimize' });
-  assert.ok(executedCommands.some(function (args) { return args[0] === 'workbench.action.closeSidebar'; }),
-    'minimize must reclaim the actual sidebar space');
-  assert.strictEqual(statusItems.length, 1, 'minimize creates one restore entry');
-  assert.strictEqual(statusItems[0].visible, true, 'the restore entry must be visible after minimizing');
-  assert.strictEqual(statusItems[0].command, 'win7Agent.openChat');
-  registeredProvider._setBusy(true);
-  assert.ok(/运行中/.test(statusItems[0].text), 'a background run must remain visible while minimized');
-  registeredProvider._setBusy(false);
-  assert.ok(/已结束/.test(statusItems[0].text), 'completion must be visible without reopening the panel');
-  await commands['win7Agent.openChat']();
-  assert.strictEqual(statusItems[0].visible, false, 'restoring must remove the extra status-bar entry');
-  await viewMessageHandler({ type: 'minimize' });
-  view.visible = true;
-  view._visibilityHandler();
-  assert.strictEqual(ext.testHooks.isAgentMinimized(), false,
-    'restoring from the activity bar must also clear the minimized state');
+  /* v1.13.5：最小化按钮有 bug，整个入口撤掉，不再留状态栏恢复项。 */
+  assert.ok(view.webview.html.indexOf('id="minimize"') === -1,
+    'the buggy minimize button must be gone from the header');
+  assert.strictEqual(statusItems.length, 0, 'no minimize flow means no restore entry');
 
-  /* 编辑器标签最小化会销毁 webview：后台运行中重新打开，历史和本轮已生成
-   * 的部分都要回来，不能只剩一个空面板。 */
+  /* 编辑器标签关闭 / 面板重建会销毁 webview：后台运行中重新打开，历史和
+   * 本轮已生成的片段都要回来，不能只剩一个空面板。 */
   const mainMessageHandler = viewMessageHandler;
-  registeredProvider._history.push({ role: 'user', content: 'minimize-resume-check' });
+  registeredProvider._history.push({ role: 'user', content: 'reopen-resume-check' });
   registeredProvider._setBusy(true);
   registeredProvider._trackMemory({ type: 'start' });
   registeredProvider._trackMemory({ type: 'delta', text: 'already generated' });
@@ -555,7 +539,7 @@ async function main() {
   await viewMessageHandler({ type: 'ready' });
   const resumeEvents = events.slice(resumeMark);
   assert.ok(resumeEvents.some(function (e) {
-    return e.type === 'replay' && e.items.some(function (m) { return m.content === 'minimize-resume-check'; });
+    return e.type === 'replay' && e.items.some(function (m) { return m.content === 'reopen-resume-check'; });
   }), 'a fresh view must receive persisted history even while busy');
   assert.ok(resumeEvents.some(function (e) { return e.type === 'delta' && e.text === 'already generated'; }),
     'and then the partial in-flight answer, not a blank transcript');
@@ -568,7 +552,7 @@ async function main() {
     return entry.webview !== midView.webview;
   });
   viewMessageHandler = mainMessageHandler;
-  console.log('  PASS  Agent minimizes the real sidebar and restores from a status-aware entry');
+  console.log('  PASS  minimize is gone, but a reopened view still resumes the live transcript');
 
   const rowHtml = (view.webview.html.match(/<div class="row">([\s\S]*?)<\/div>/) || [])[1] || '';
   /* 记忆容量条必须在对话顶端（hdr 之后、messages 之前），常驻可见；
