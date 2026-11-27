@@ -736,7 +736,14 @@ async function main() {
   assert.ok(/case 'createFile'/.test(agentJs) && /async function createFileTool/.test(agentJs), 'createFile tool must be implemented and dispatched');
   assert.ok(/mkdirSync/.test(agentJs) && /recursive: true/.test(agentJs), 'createFile must create missing parent directories');
   assert.ok(/createFile/.test(rulesJs) && /工具能力/.test(rulesJs), 'createFile must be gated by constraints and always advertised in the prompt');
-  assert.ok(/createFile/.test(manifest.contributes.configuration.properties['win7Agent.systemPrompt'].default), 'default system prompt must mention createFile');
+  const basePrompt = manifest.contributes.configuration.properties['win7Agent.systemPrompt'].default;
+  assert.ok(/createFile/.test(basePrompt), 'default system prompt must mention createFile');
+  assert.ok(/以下方「工具能力」/.test(basePrompt),
+    'the base prompt must defer tool details to the injected section instead of duplicating them');
+  assert.ok(basePrompt.length < 700,
+    'the base prompt must stay short; tool capabilities are injected separately: ' + basePrompt.length);
+  assert.ok(/先给结论/.test(basePrompt) && /直接选合理默认方案/.test(basePrompt),
+    'the base prompt must keep the action-first / conclusion-first behaviour');
   console.log('  PASS  createFile tool is implemented, gated, and discoverable in the prompt');
 
   assert.ok(/emitAwaiting/.test(agentJs), 'agent must emit an awaiting signal before confirmation dialogs');
@@ -2018,6 +2025,8 @@ async function main() {
     const id = require('../package.json').publisher + '.' + require('../package.json').name;
     const userDir = path.join(root, 'User');
     const extRoot = path.join(root, 'extensions');
+    assert.ok(settingsAudit.LEGACY_DEFAULTS.systemPrompt.some(function (s) { return /backup\//.test(s); }),
+      'the long-lived v1.13.5 base prompt must be recognized as a stale copied default');
     const active = path.join(extRoot, id + '-1.11.14');
     fs.mkdirSync(path.join(userDir, 'globalStorage', id), { recursive: true });
     fs.mkdirSync(active, { recursive: true });

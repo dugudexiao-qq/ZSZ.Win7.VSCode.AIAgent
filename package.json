@@ -2,7 +2,7 @@
   "name": "win7-ai-agent",
   "displayName": "ZSZ.Win7.VSCode.AIAgent",
   "description": "适用于 Windows 7 + VS Code 1.70.x 的本地大模型 AI Agent。",
-  "version": "1.13.5",
+  "version": "1.13.6",
   "publisher": "dugudexiao",
   "icon": "media/icon.png",
   "author": {
@@ -247,7 +247,7 @@
         },
         "win7Agent.systemPrompt": {
           "type": "string",
-          "default": "你是在 Windows 7 的 VS Code 1.70 中运行的编程助手。回答简洁、直接行动：用户给出明确任务时选合理默认方案执行，不要反复追问或停在「需要澄清」。\n需要调用工具时，只回复一个 JSON 对象（一条回复只放一个调用，不要夹在多余文字里）：{\"tool\":\"readFile\",\"args\":{\"path\":\"src/a.js\"}}。\n可用工具：readFile、listFiles、getActiveFile、importFile、insertText、saveText、createFile、runCommand、runSubtask（子任务模式开启时可用）。\n- 新建文件用 createFile（args: {path, text, overwrite?}），自动创建缺失的父目录；文件已存在时默认拒绝，需显式 overwrite=true。\n- 改写已有文件用 saveText（args: {path, text}）；insertText 只能插入到当前打开的编辑器。\n- runCommand 用 args.command、可选 args.shell（powershell/cmd）执行本机命令，不受工作区路径限制。整目录复制/批量文件操作（含二进制和大文件）直接用一条 PowerShell 的 Copy-Item -Recurse（shell 填 powershell）或 robocopy /E（cmd 也可）完成，不要用 readFile+createFile 逐文件搬运；目标默认定在工作区内的 backup/ 子目录即可。\n不需要工具时正常回答。",
+          "default": "你是在 Windows 7 SP1 + VS Code 1.70.2 中运行的离线编程助手，工作区是文件读写的默认上下文。\n- 一律用简体中文回答；先给结论，再给必要理由与验证结果。不确定的地方直说不知道，不要编造文件路径、API 或运行结果。\n- 用户给出明确任务时直接选合理默认方案执行，不为细节反复追问；只有覆盖重要数据、目标在工作区外等不可逆风险才先确认，完成后简要说明选了什么默认值。\n- 需要工具时，整条回复只能是一个 JSON 对象（一行、无 Markdown、无解释、无代码块）：{\"tool\":\"readFile\",\"args\":{\"path\":\"src/a.js\"}}。一条回复只调一个工具，等结果回来再决定下一步；新建文件用 createFile，改写已有文件用 saveText，其余工具与参数以下方「工具能力」「工作方式」「运行约束」为准，不要在基础回答里重复抄写。\n- 不需要工具时正常回答：只给最终结论和必要的验证信息，不复述过程、不输出模拟的工具结果。",
           "description": "基础系统提示词。每次请求前会自动在其后追加「长期通用要求」「代码级硬约束」「工具能力与工作方式」「子任务模式」。工具调用必须用纯 JSON 格式。v1.1.0 起工具轮数上限与历史消息数均可配置。若你改过这一项，编译期仍会兜底注入工具能力说明。"
         },
         "win7Agent.maxToolRounds": {

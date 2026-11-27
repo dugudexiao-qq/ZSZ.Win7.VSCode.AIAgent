@@ -31,7 +31,10 @@ const RETIRED_KEYS = {
  * 从旧版「当前值」抄过来的，而不是用户自己写的——这类值会悄悄压住新版默认值。 */
 const LEGACY_DEFAULTS = {
   'systemPrompt': [
-    '你是在 Windows 7 的 VS Code 1.70 中运行的编程助手。回答简洁。如需调用工具，只回复一个 JSON 对象：{"tool":"readFile","args":{"path":"src/a.js"}}。可用工具：readFile、listFiles、getActiveFile、importFile、insertText、saveText、runCommand。否则正常回答。'
+    '你是在 Windows 7 的 VS Code 1.70 中运行的编程助手。回答简洁。如需调用工具，只回复一个 JSON 对象：{"tool":"readFile","args":{"path":"src/a.js"}}。可用工具：readFile、listFiles、getActiveFile、importFile、insertText、saveText、runCommand。否则正常回答。',
+    /* v1.13.6 前用了很多年的默认提示词：如果用户曾把「当前值」抄进
+     * settings.json，它会一直压住新版更精简的基础提示词，体检时要认出来。 */
+    '你是在 Windows 7 的 VS Code 1.70 中运行的编程助手。回答简洁、直接行动：用户给出明确任务时选合理默认方案执行，不要反复追问或停在「需要澄清」。\n需要调用工具时，只回复一个 JSON 对象（一条回复只放一个调用，不要夹在多余文字里）：{"tool":"readFile","args":{"path":"src/a.js"}}。\n可用工具：readFile、listFiles、getActiveFile、importFile、insertText、saveText、createFile、runCommand、runSubtask（子任务模式开启时可用）。\n- 新建文件用 createFile（args: {path, text, overwrite?}），自动创建缺失的父目录；文件已存在时默认拒绝，需显式 overwrite=true。\n- 改写已有文件用 saveText（args: {path, text}）；insertText 只能插入到当前打开的编辑器。\n- runCommand 用 args.command、可选 args.shell（powershell/cmd）执行本机命令，不受工作区路径限制。整目录复制/批量文件操作（含二进制和大文件）直接用一条 PowerShell 的 Copy-Item -Recurse（shell 填 powershell）或 robocopy /E（cmd 也可）完成，不要用 readFile+createFile 逐文件搬运；目标默认定在工作区内的 backup/ 子目录即可。\n不需要工具时正常回答。'
   ]
 };
 
