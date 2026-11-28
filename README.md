@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.13.7-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.13.8-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -47,9 +47,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.13.7** 的附件 `zsz-win7-vscode-aiagent-1.13.7.vsix`（约 200 KB）
-   （直链：[Releases/download/v1.13.7](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.13.7/zsz-win7-vscode-aiagent-1.13.7.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.13.7.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.13.8** 的附件 `zsz-win7-vscode-aiagent-1.13.8.vsix`（约 200 KB）
+   （直链：[Releases/download/v1.13.8](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.13.8/zsz-win7-vscode-aiagent-1.13.8.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.13.8.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)：[发行版页](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases) 与 GitHub 逐版对应（每个版本都带 `.vsix` 附件），也可以在文件页的 `dist/` 里下最新一版。
@@ -77,7 +77,7 @@
 - **输入队列**：回复未结束可继续输入，队列可编辑、撤回、调序；一轮结束（成功或超时）就自动发下一条，**不再等人点「继续队列」**；只有连续 2 次超时、认证失败、手动 Stop 才暂停
 - **定时任务**：把任务写好，点发送键旁的「定时」，选 30 分钟后 / 凌晨 02:00 / 自定义时刻，可只跑一次或每天同一时间；到点自动发起一整轮，正在回复时会排队等这一轮结束；夜里无人值守时确认弹窗按推荐自动执行
 - **版本更新提醒**：启动后一天查一次新版本，有更新时弹一条带「查看更新 / 跳过此版本」的提示；更新源可自定义（官方 GitHub、别人的仓库、内网自建 feed 都行），断网/内网不通只写日志，不打扰你
-- **过程展示**：工具调用默认折叠一行（如 `✎ 查看文件：src/agent.js · 0.8 s`），失败行直接写中文原因，点标题展开详情
+- **过程展示**：工具调用默认折叠一行（如 `✎ 查看文件：src/agent.js · 0.8 s`），失败行直接写中文原因，点标题展开详情。展开阅读时窗口不会被后续输出拽走——只有你本来就在最底部才会自动跟随，拉回底部即恢复
 - **「已完成」标签 ≠ 事情真做成了**：回答左上角的低调标签与冷色竖线只表示这一轮正常收尾，是否真的改到文件以回答下方的自检行为准
 
 ## 定时任务（错峰跑批）
@@ -167,6 +167,7 @@ feed 的内容很宽松，认这三种形态之一即可：
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.13.8**：会话区改为**粘性滚动**：只有当你已经在最底部时，新内容才自动跟随；展开思考过程或工具详情阅读时，模型继续输出、新消息到达都不会把窗口拽走，直到你手动把滚动条拉回最下面才恢复跟随。展开/收起本身也会即时重算状态，切换会话与重开面板仍强制看到最新一条。
 - **v1.13.7**：界面配色统一为科技感简约风，去掉「回答结束整段变绿」。完成态改为正文保持原色、左侧一条冷色竖线 + 一枚低调的「✓ 已完成」小标签；全站颜色收敛到 `:root` 一组语义变量（中性前景 / 冷色强调 / 琥珀警示 / 珊瑚红错误），链接、用户竖条、自检标签、进度点、记忆条不再各用一套十六进制。换主题或以后调风格只改这一处。Win7 兼容不变。
 - **v1.13.6**：精简默认系统提示词：基础段只保留角色、结论优先、直接行动、纯 JSON 调用与「不编造结果」；工具参数、工作方式、Shell 语法和子任务规则继续由扩展运行时注入，不再在基础提示词里重复一长串。若你曾把旧默认提示词抄进 `settings.json`，「设置体检」现在能识别它并提示清理，避免新版默认值被压住。
 - **v1.13.5**：移除标题栏的最小化按钮及配套状态栏恢复入口（该交互有 bug）。编辑器标签关闭 / 面板重建时的历史与未写完正文续传仍然保留，重开后不会丢失正在生成的回复。

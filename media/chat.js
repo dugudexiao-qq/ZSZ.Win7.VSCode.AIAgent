@@ -193,7 +193,27 @@
     }
   }
 
-  function scrollDown() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+  /* 自动跟随只在用户已经贴着底部时生效。
+   * 展开一段思考/工具详情阅读时，新内容继续追加也不能把视口拽走；
+   * 只有用户手动把窗口拉回底部，才恢复跟随。BOTTOM_SLACK 留几像素误差，
+   * 免得差 1px 就永远不跟随。 */
+  var BOTTOM_SLACK = 48;
+  var stickyBottom = true;
+  function nearBottom() {
+    return (messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight) <= BOTTOM_SLACK;
+  }
+  function scrollDown() {
+    if (!stickyBottom) { return; }
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+  /* 会话切换 / 面板重建：明确要看到最新内容，强制回到底部并恢复跟随。 */
+  function scrollDownForce() {
+    stickyBottom = true;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+  messagesEl.addEventListener('scroll', function () {
+    stickyBottom = nearBottom();
+  });
 
   /* 回合分割线：一次完整回答结束后，下一条用户消息之前插一条横线，
    * 让「上一轮到此结束、下面是新的一问」有明确的视觉停顿。只在已有内容、
@@ -956,6 +976,9 @@
     timeoutStreak = 0;
     lastErrorKind = '';
     renderQueue();
+    /* 换会话就是换了一屏内容：看到最新一条并恢复跟随，别沿用上一屏
+     * 「停在中间」的滚动位置。 */
+    scrollDownForce();
   }
 
   function renderAttachments() {
@@ -1266,6 +1289,9 @@
     var glyph = t.querySelector('.seg-glyph');
     if (glyph) { glyph.textContent = open ? '▾' : '▸'; }
     t.setAttribute('aria-expanded', open ? 'true' : 'false');
+    /* 展开/收起改变内容高度，但多数浏览器不会为此发 scroll 事件；
+     * 主动重算一次，否则展开中间一段后仍会被新消息拽到底部。 */
+    stickyBottom = nearBottom();
   });
 
   /* ---- @ 文件引用弹出 ----
@@ -1704,7 +1730,7 @@
           addMessage(it.role === 'assistant' ? 'assistant' : 'user', it.content || '',
             it.scheduled ? scheduleBadge(it.scheduled) : '');
         });
-        scrollDown();
+        scrollDownForce();
         break;
       case 'attachment':
         upsertAttachment(msg.item);

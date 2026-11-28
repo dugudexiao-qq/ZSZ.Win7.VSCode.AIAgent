@@ -422,6 +422,61 @@ check('thoughts and tool calls interleave inline, collapsed by default (v1.9.0)'
   hostMessage({ type: 'busy', value: false, elapsedMs: 100 });  // 收掉计时器，进程才能退出
 });
 
+check('sticky scroll only follows at the bottom; reading an expanded section never jumps', function () {
+  const m = els.messages;
+  m.scrollHeight = 1000;
+  m.clientHeight = 200;
+  m.scrollTop = 800;                     // 贴底（800 + 200 = 1000）
+  fire(m, 'scroll');
+
+  hostMessage({ type: 'start' });
+  assert.strictEqual(m.scrollTop, 1000,
+    'at the bottom, a new answer line must stay pinned to the end');
+  hostMessage({ type: 'delta', text: '正在生成的回答' });
+  assert.strictEqual(m.scrollTop, 1000,
+    'streaming text must follow while the user is at the bottom');
+
+  // 用户为了阅读展开段向上滚走
+  m.scrollTop = 300;
+  fire(m, 'scroll');
+  m.scrollHeight = 1400;
+  hostMessage({ type: 'delta', text: '阅读时新增的内容' });
+  assert.strictEqual(m.scrollTop, 300,
+    'new content must NOT yank the view while reading above the bottom');
+
+  // 展开一个段落后内容变高：展开动作本身也要关掉跟随
+  m.scrollTop = 1200;                    // 贴底（1200 + 200 = 1400）
+  fire(m, 'scroll');
+  const seg = makeEl();
+  const head = makeEl();
+  head.className = 'seg-toggle';
+  const body = makeEl();
+  body.className = 'seg-body';
+  body.hidden = true;
+  seg.appendChild(head);
+  seg.appendChild(body);
+  m.appendChild(seg);
+  head.closest = function (sel) { return sel === '.seg-toggle' ? head : null; };
+  m.scrollHeight = 2000;                 // 展开后正文撑高
+  fire(m, 'click', { target: head });
+  assert.strictEqual(body.hidden, false, 'precondition: section expanded');
+  m.scrollHeight = 2200;                 // 又来新内容
+  hostMessage({ type: 'delta', text: '展开后不该跳' });
+  assert.strictEqual(m.scrollTop, 1200,
+    'expanding a section must stop auto-follow even if the user was at the bottom');
+
+  // 用户把窗口拉到最下面 → 恢复跟随
+  m.scrollTop = 2000;                    // 贴底（2000 + 200 = 2200）
+  fire(m, 'scroll');
+  m.scrollHeight = 2400;
+  hostMessage({ type: 'delta', text: '恢复跟随' });
+  assert.strictEqual(m.scrollTop, 2400,
+    'once the user scrolls back to the bottom, following must resume');
+
+  hostMessage({ type: 'done' });
+  hostMessage({ type: 'busy', value: false, elapsedMs: 100 });
+});
+
 check('a failed tool turns its running line into the failure row, repeats collapse (v1.9.0)', function () {
   hostMessage({ type: 'tool', text: 'tool -> saveText {"path":"a.txt"}', status: 'call', tool: 'saveText' });
   hostMessage({ type: 'tool', text: 'TOOL ERROR: File already exists: a.txt', status: 'failed', tool: 'saveText' });
