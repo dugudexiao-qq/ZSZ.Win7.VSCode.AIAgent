@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.13.9-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.14.0-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -47,9 +47,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.13.9** 的附件 `zsz-win7-vscode-aiagent-1.13.9.vsix`（约 200 KB）
-   （直链：[Releases/download/v1.13.9](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.13.9/zsz-win7-vscode-aiagent-1.13.9.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.13.9.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.14.0** 的附件 `zsz-win7-vscode-aiagent-1.14.0.vsix`（约 200 KB）
+   （直链：[Releases/download/v1.14.0](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.14.0/zsz-win7-vscode-aiagent-1.14.0.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.14.0.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)：[发行版页](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases) 与 GitHub 逐版对应（每个版本都带 `.vsix` 附件），也可以在文件页的 `dist/` 里下最新一版。
@@ -73,6 +73,7 @@
 - **上下文预算提醒**（只在改设置时出现，不占界面）：改 `maxContextChars` / `maxHistoryMessages` 或换模型时，按 `model` 推断窗口并比对（8k≈6000 字符、32k≈2.3 万、128k≈9 万，上限 20 万）；偏离 20% 以上才弹一句，点「设为推荐值」会把字符数与条数一起写好。同一组「模型 + 当前值」只提醒一次，选「保留当前」后不再啰嗦，模型名认不出来则完全不提
 - **4 个运行开关**（标题栏下方）：写入（只读/可写）、写入确认、命令确认、子任务
 - **下拉菜单**：清空对话、API Key、长期要求（点开后在输入框里直接写，回车即记住）、经验记忆、模型配置、新面板打开、服务地址
+- **Save**（标题栏）：把当前会话的**完整对话**存成 `.md` / `.csv` / `.txt`，不是只存最后一条回答；生成中的回复也会附上
 - **多会话**：底部「切换对话 ▾」新建/切换/删除对话，各自独立上下文
 - **输入队列**：回复未结束可继续输入，队列可编辑、撤回、调序；一轮结束（成功或超时）就自动发下一条，**不再等人点「继续队列」**；只有连续 2 次超时、认证失败、手动 Stop 才暂停
 - **定时任务**：把任务写好，点发送键旁的「定时」，选 30 分钟后 / 凌晨 02:00 / 自定义时刻，可只跑一次或每天同一时间；到点自动发起一整轮，正在回复时会排队等这一轮结束；夜里无人值守时确认弹窗按推荐自动执行
@@ -167,6 +168,7 @@ feed 的内容很宽松，认这三种形态之一即可：
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.14.0**：**Save 按钮改为保存完整对话**。以前只写最后一条回答，问题和前面的来回全丢；现在按当前会话导出全部消息（你 / AI / 历史摘要，定时任务带触发时间），`.md` 按角色分段、`.csv` 每条一行两列、`.txt` 方括号标注角色，正在生成中的回复也会附上并注明「生成中」。面板关着或重开 VS Code 都能导出，因为读的是持久化的会话历史。
 - **v1.13.9**：修好两处体验问题。**Stop 按钮**在点下 Send 的瞬间就可用，不必等模型真正开始请求（此前读 Key、建连接那段空窗期 Stop 是灰的，点了发送却取消不了）；结束/出错会自动恢复。**经验记忆解除 12 条上限**：不同经验全部保留，仅按总字符预算（12000 字符，约 60+ 条）裁剪最旧的，避免把刚学到的总结丢掉，同时不让提示词无限膨胀。菜单不再显示「x/12」。
 - **v1.13.8**：会话区改为**粘性滚动**：只有当你已经在最底部时，新内容才自动跟随；展开思考过程或工具详情阅读时，模型继续输出、新消息到达都不会把窗口拽走，直到你手动把滚动条拉回最下面才恢复跟随。展开/收起本身也会即时重算状态，切换会话与重开面板仍强制看到最新一条。
 - **v1.13.7**：界面配色统一为科技感简约风，去掉「回答结束整段变绿」。完成态改为正文保持原色、左侧一条冷色竖线 + 一枚低调的「✓ 已完成」小标签；全站颜色收敛到 `:root` 一组语义变量（中性前景 / 冷色强调 / 琥珀警示 / 珊瑚红错误），链接、用户竖条、自检标签、进度点、记忆条不再各用一套十六进制。换主题或以后调风格只改这一处。Win7 兼容不变。

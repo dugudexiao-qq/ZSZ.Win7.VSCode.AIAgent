@@ -393,7 +393,7 @@ class ChatViewProvider {
       '  <div class="row"><button id="send" class="primary">Send</button><button id="stop" disabled>Stop</button>' +
         '<button id="schedbtn" title="定时发送：把输入框里的内容排到指定时间执行（内网错峰、夜里跑批）">定时</button>' +
         '<button id="importbtn" title="导入文件作为本轮上下文">Import</button>' +
-        '<button id="exportbtn" title="把上一条回答保存成文件（.md / .csv / .txt）">Save</button>' +
+        '<button id="exportbtn" title="把当前会话的完整对话保存成文件（.md / .csv / .txt）">Save</button>' +
         /* 会话切换：原生 select 在 Win7 上是系统控件，配色跟主题对不上，
          * 改成按钮 + 自绘列表（向上弹出，显示标题 / 时间，可删除）。
          * 按钮只写「切换对话」，不放会话名——会话名长短不一会把按钮撑宽，
@@ -690,6 +690,28 @@ class ChatViewProvider {
   }
 
   getLastAnswer() { return this._lastAnswer; }
+
+  /* Save 按钮导出「当前会话的完整对话」，不只最后一条回答。
+   * 直接读持久化的 history（user / assistant / 历史摘要），这样面板关着、
+   * 或刚重开 VS Code 也能导出；正在生成的那一段还没进 history，补上去。
+   * 返回 [{ role, text, scheduled? }]，由调用方按 md/csv/txt 排版。 */
+  getConversation() {
+    const items = [];
+    const history = Array.isArray(this._history) ? this._history : [];
+    history.forEach((m) => {
+      const raw = m && typeof m.content === 'string' ? m.content : String((m && m.content) || '');
+      if (!raw) { return; }
+      const role = m && m.role === 'assistant' ? 'assistant' : (m && m.role === 'system' ? 'system' : 'user');
+      const item = { role: role, text: raw };
+      if (m && m.scheduled) { item.scheduled = Number(m.scheduled) || 1; }
+      items.push(item);
+    });
+    /* 生成中的正文尚未 push 进 history；漏掉它会出现「刚写的回答没保存」。 */
+    if (this._busy && this._liveReplyText) {
+      items.push({ role: 'assistant', text: this._liveReplyText + '\n\n（本轮仍在生成中）' });
+    }
+    return items;
+  }
 
   clearHistory() {
     /* 正在回复时清空：runAgent 手里握着同一个 history 数组，清完它还会把

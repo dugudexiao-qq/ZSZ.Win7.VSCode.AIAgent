@@ -1283,9 +1283,11 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('win7Agent.exportAnswer', async function () {
-      const answer = provider.getLastAnswer();
-      if (!answer) {
-        vscode.window.showInformationMessage(APP + ': 还没有可保存的回答。');
+      /* 导出整段对话，而不是只有最后一条回答：用户保存的是「这次聊了什么」，
+       * 单存最后一条既丢了问题也丢了过程，事后没法复盘。 */
+      const items = provider.getConversation ? provider.getConversation() : [];
+      if (!items.length) {
+        vscode.window.showInformationMessage(APP + ': 还没有可保存的对话。');
         return;
       }
       // User-initiated export is intentionally NOT gated by constraints.readOnly:
@@ -1297,23 +1299,39 @@ function activate(context) {
           '纯文本': ['txt'],
           '所有文件': ['*']
         },
-        defaultUri: vscode.Uri.file('answer.md'),
-        saveLabel: '保存回答'
+        defaultUri: vscode.Uri.file('conversation.md'),
+        saveLabel: '保存对话'
       });
       if (!uri) { return; }
       try {
         const ext = String(path.extname(uri.fsPath) || '').toLowerCase();
-        let out = answer;
+        let out;
         if (ext === '.csv') {
-          // Wrap the whole answer as one CSV cell so quotes/commas/newlines
-          // never corrupt the structure. This is a text export, not a data
-          // transform: the model's answer is kept verbatim inside the cell.
-          out = fileImport.csvEscape(answer) + '\n';
+          /* 每条消息一行：角色 + 全文。全文用 csvEscape 包成一个单元格，
+           * 引号/逗号/换行原样保留，表格软件能直接开。 */
+          const rows = [['角色', '内容']];
+          items.forEach((m) => {
+            const who = m.role === 'assistant' ? 'AI' : (m.role === 'system' ? '历史摘要' : '你');
+            rows.push([m.scheduled ? who + '（定时 ' + schedulerLib.fmtClock(m.scheduled) + '）' : who, m.text]);
+          });
+          out = rows.map((row) => row.map(fileImport.csvEscape).join(',')).join('\r\n') + '\r\n';
         } else if (ext === '.md' || ext === '.markdown') {
-          out = answer.replace(/\r\n/g, '\n') + '\n';
+          out = '# 对话记录\n\n';
+          items.forEach((m) => {
+            const who = m.role === 'assistant' ? 'AI' : (m.role === 'system' ? '历史摘要' : '你');
+            const tag = m.scheduled ? '（定时 ' + schedulerLib.fmtClock(m.scheduled) + '）' : '';
+            out += '## ' + who + tag + '\n\n' + m.text.replace(/\r\n/g, '\n').trim() + '\n\n';
+          });
+        } else {
+          out = '';
+          items.forEach((m) => {
+            const who = m.role === 'assistant' ? 'AI' : (m.role === 'system' ? '历史摘要' : '你');
+            const tag = m.scheduled ? '（定时 ' + schedulerLib.fmtClock(m.scheduled) + '）' : '';
+            out += '[' + who + tag + ']\n' + m.text.replace(/\r\n/g, '\n').trim() + '\n\n';
+          });
         }
         fs.writeFileSync(uri.fsPath, out, 'utf8');
-        vscode.window.showInformationMessage(APP + ': 回答已保存为 ' + ext + ' 文件：' + uri.fsPath);
+        vscode.window.showInformationMessage(APP + ': 完整对话（' + items.length + ' 条）已保存为 ' + ext + ' 文件：' + uri.fsPath);
       } catch (e) {
         vscode.window.showErrorMessage(APP + ': 保存失败 - ' + (e && e.message ? e.message : String(e)));
       }

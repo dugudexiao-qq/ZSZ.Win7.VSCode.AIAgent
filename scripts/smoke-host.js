@@ -1984,6 +1984,64 @@ async function main() {
   assert.strictEqual(csv, '"a,b\n""quoted"""', 'CSV export must double quotes and wrap');
   console.log('  PASS  CSV export escapes commas, quotes and newlines correctly');
 
+  /* v1.14.0：Save 导出整段对话，不再只存最后一条回答。 */
+  {
+    const fsn = require('fs');
+    const osn = require('os');
+    const tmpExport = fsn.mkdtempSync(path.join(osn.tmpdir(), 'zsz-export-'));
+    const savedDialog = vscodeStub.window.showSaveDialog;
+    const savedHistory = registeredProvider._history;
+    const savedLast = registeredProvider._lastAnswer;
+    const savedBusy = registeredProvider._busy;
+    const savedLive = registeredProvider._liveReplyText;
+
+    registeredProvider._history = [
+      { role: 'user', content: '第一个问题' },
+      { role: 'assistant', content: '第一条回答' },
+      { role: 'user', content: '第二个问题,带"引号"' },
+      { role: 'assistant', content: '第二条回答\n换行' }
+    ];
+    registeredProvider._lastAnswer = '第二条回答\n换行';
+    registeredProvider._busy = false;
+    registeredProvider._liveReplyText = '';
+
+    const mdPath = path.join(tmpExport, 'conversation.md');
+    vscodeStub.window.showSaveDialog = async function () { return { fsPath: mdPath }; };
+    await commands['win7Agent.exportAnswer']();
+    const md = fsn.readFileSync(mdPath, 'utf8');
+    assert.ok(/第一个问题/.test(md) && /第一条回答/.test(md),
+      'the exported file must contain the earlier turns, not only the last answer');
+    assert.ok(/第二个问题/.test(md) && /第二条回答/.test(md), 'and the latest turn');
+    assert.ok(/^# 对话记录/.test(md), 'markdown export must be titled as a conversation');
+    assert.ok(/## 你/.test(md) && /## AI/.test(md), 'each turn must be labelled by role');
+
+    const csvPath = path.join(tmpExport, 'conversation.csv');
+    vscodeStub.window.showSaveDialog = async function () { return { fsPath: csvPath }; };
+    await commands['win7Agent.exportAnswer']();
+    const csvOut = fsn.readFileSync(csvPath, 'utf8');
+    assert.ok(/第一个问题/.test(csvOut) && /第一条回答/.test(csvOut),
+      'CSV export must carry the whole conversation too');
+    assert.ok(/"第二个问题,带""引号"""/.test(csvOut), 'CSV cell must keep quotes/commas verbatim');
+
+    /* 生成中的正文还没进 history，也要导出，否则「刚写的回答没存上」。 */
+    registeredProvider._busy = true;
+    registeredProvider._liveReplyText = '正在生成的回复';
+    const livePath = path.join(tmpExport, 'live.md');
+    vscodeStub.window.showSaveDialog = async function () { return { fsPath: livePath }; };
+    await commands['win7Agent.exportAnswer']();
+    const liveOut = fsn.readFileSync(livePath, 'utf8');
+    assert.ok(/正在生成的回复/.test(liveOut) && /生成中/.test(liveOut),
+      'an in-flight reply must be included and marked as still generating');
+
+    vscodeStub.window.showSaveDialog = savedDialog;
+    registeredProvider._history = savedHistory;
+    registeredProvider._lastAnswer = savedLast;
+    registeredProvider._busy = savedBusy;
+    registeredProvider._liveReplyText = savedLive;
+    fsn.rmSync(tmpExport, { recursive: true, force: true });
+    console.log('  PASS  Save exports the full conversation (md/csv) including in-flight replies');
+  }
+
   /* @ mention: half/full-width @, CJK/punctuation boundary, always-visible
    * feedback, and host fallback when the first findFiles pass is empty. */
   const mentionJs = fs.readFileSync(path.join(__dirname, '..', 'media', 'chat.js'), 'utf8');
