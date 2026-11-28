@@ -1,6 +1,6 @@
 # ZSZ.Win7.VSCode.AIAgent
 
-[![Version](https://img.shields.io/badge/version-1.13.8-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
+[![Version](https://img.shields.io/badge/version-1.13.9-blue)](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE) ![Platform](https://img.shields.io/badge/platform-Windows%207%20SP1%20%2B%20VS%20Code%201.70.2-lightgrey)
 
 让 **Windows 7 SP1 + VS Code 1.70.2** 这类无法升级的老机器也能用上 AI Agent 的扩展。对接任意 **OpenAI 兼容的 chat/completions 接口**（本地 llama.cpp / Ollama / LM Studio，或内网模型服务），模型跑在别处，插件负责对话、工具执行与安全约束。
 
@@ -47,9 +47,9 @@
 
 每个版本都有对应的 Release（发行版），附件即离线安装包：
 
-1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.13.8** 的附件 `zsz-win7-vscode-aiagent-1.13.8.vsix`（约 200 KB）
-   （直链：[Releases/download/v1.13.8](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.13.8/zsz-win7-vscode-aiagent-1.13.8.vsix)）
-2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.13.8.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
+1. 打开 [Releases 页](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases)，下载 **v1.13.9** 的附件 `zsz-win7-vscode-aiagent-1.13.9.vsix`（约 200 KB）
+   （直链：[Releases/download/v1.13.9](https://github.com/dugudexiao-qq/ZSZ.Win7.VSCode.AIAgent/releases/download/v1.13.9/zsz-win7-vscode-aiagent-1.13.9.vsix)）
+2. 安装：`code --install-extension zsz-win7-vscode-aiagent-1.13.9.vsix`（或在 VS Code 中 `Extensions: Install from VSIX`）
 3. 重载窗口：`Developer: Reload Window`
 
 > 国内访问 GitHub 不稳定时，可用 [GitCode 镜像](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent)：[发行版页](https://gitcode.com/dugudexiao/zsz.Win7.AIAgent/releases) 与 GitHub 逐版对应（每个版本都带 `.vsix` 附件），也可以在文件页的 `dist/` 里下最新一版。
@@ -167,6 +167,7 @@ feed 的内容很宽松，认这三种形态之一即可：
 <details>
 <summary>各版本更新内容</summary>
 
+- **v1.13.9**：修好两处体验问题。**Stop 按钮**在点下 Send 的瞬间就可用，不必等模型真正开始请求（此前读 Key、建连接那段空窗期 Stop 是灰的，点了发送却取消不了）；结束/出错会自动恢复。**经验记忆解除 12 条上限**：不同经验全部保留，仅按总字符预算（12000 字符，约 60+ 条）裁剪最旧的，避免把刚学到的总结丢掉，同时不让提示词无限膨胀。菜单不再显示「x/12」。
 - **v1.13.8**：会话区改为**粘性滚动**：只有当你已经在最底部时，新内容才自动跟随；展开思考过程或工具详情阅读时，模型继续输出、新消息到达都不会把窗口拽走，直到你手动把滚动条拉回最下面才恢复跟随。展开/收起本身也会即时重算状态，切换会话与重开面板仍强制看到最新一条。
 - **v1.13.7**：界面配色统一为科技感简约风，去掉「回答结束整段变绿」。完成态改为正文保持原色、左侧一条冷色竖线 + 一枚低调的「✓ 已完成」小标签；全站颜色收敛到 `:root` 一组语义变量（中性前景 / 冷色强调 / 琥珀警示 / 珊瑚红错误），链接、用户竖条、自检标签、进度点、记忆条不再各用一套十六进制。换主题或以后调风格只改这一处。Win7 兼容不变。
 - **v1.13.6**：精简默认系统提示词：基础段只保留角色、结论优先、直接行动、纯 JSON 调用与「不编造结果」；工具参数、工作方式、Shell 语法和子任务规则继续由扩展运行时注入，不再在基础提示词里重复一长串。若你曾把旧默认提示词抄进 `settings.json`，「设置体检」现在能识别它并提示清理，避免新版默认值被压住。

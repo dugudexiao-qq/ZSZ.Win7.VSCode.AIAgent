@@ -2,7 +2,7 @@
   "name": "win7-ai-agent",
   "displayName": "ZSZ.Win7.VSCode.AIAgent",
   "description": "适用于 Windows 7 + VS Code 1.70.x 的本地大模型 AI Agent。",
-  "version": "1.13.8",
+  "version": "1.13.9",
   "publisher": "dugudexiao",
   "icon": "media/icon.png",
   "author": {
@@ -335,7 +335,7 @@
         "win7Agent.autoLearn": {
           "type": "boolean",
           "default": true,
-          "description": "自动学习：工具报错之后又被修好时，把解决方式记成一条经验，在之后每次请求前注入提示词（存于 globalState，与「长期要求」分开存储、分开计数，最多 12 条）。关闭后不再新增，已记下的仍然生效，可在菜单「经验记忆」里逐条删除。"
+          "description": "自动学习：工具报错之后又被修好时，把解决方式记成一条经验，在之后每次请求前注入提示词（存于 globalState，与「长期要求」分开存储、分开计数，无条数上限，仅按总字符预算保留最新条目）。关闭后不再新增，已记下的仍然生效，可在菜单「经验记忆」里逐条删除。"
         },
         "win7Agent.constraints.readOnly": {
           "type": "boolean",

@@ -610,12 +610,24 @@ async function main() {
     assert.strictEqual(list[0].text, 'B', 'newest wording wins');
     assert.strictEqual(list[0].hits, 2, 'a repeat must bump the hit count instead of piling up');
 
-    for (let i = 0; i < lessons.MAX_LESSONS + 5; i++) {
+    /* 旧的 12 条硬上限已解除：造 40 条也要全部留下。 */
+    for (let i = 0; i < 40; i++) {
       list = lessons.addLesson(list, { id: 'custom-' + i, text: 'note ' + i });
     }
-    assert.strictEqual(list.length, lessons.MAX_LESSONS, 'memory must be capped');
-    assert.strictEqual(list[list.length - 1].text, 'note ' + (lessons.MAX_LESSONS + 4), 'newest kept at the tail');
-    assert.ok(list.every(function (it) { return it.text !== 'B'; }), 'oldest entries are dropped first');
+    assert.strictEqual(list.length, 41, 'the old 12-item cap must be gone: all distinct lessons survive');
+    assert.strictEqual(list[list.length - 1].text, 'note 39', 'newest kept at the tail');
+    assert.ok(list.some(function (it) { return it.text === 'B'; }), 'no entry is dropped just for being old');
+
+    /* 但总字符仍要有边界，否则提示词会被无限撑大：灌入超长经验后
+     * 触发预算裁剪，最旧的先走，最新的留下。 */
+    let budgeted = [];
+    for (let i = 0; i < 90; i++) {
+      budgeted = lessons.addLesson(budgeted, { id: 'bulk-' + i, text: 'x'.repeat(180) });
+    }
+    assert.ok(budgeted.length > 12, 'budget must allow far more than the old 12');
+    assert.ok(budgeted.every(function (it) { return it.text.length <= lessons.MAX_LESSON_CHARS; }),
+      'each lesson stays within its own char limit');
+    assert.strictEqual(budgeted[budgeted.length - 1].id, 'bulk-89', 'newest survives budget trimming');
   });
 
   await test('a tool that failed several times keeps every distinct error until it works', function () {

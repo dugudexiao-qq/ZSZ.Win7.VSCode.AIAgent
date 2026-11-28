@@ -1144,6 +1144,11 @@
     phaseText.textContent = '正在准备请求…';
     phaseText.className = 'ptext';
     phaseDot.className = 'pdot';
+    /* 乐观进入忙碌：busy=true 要等模型真正发起请求才由宿主发来，
+     * 中间这段（读 Key、建连接）Stop 一直是 disabled，点了发送却取消不了。
+     * 这里先启用 Stop；若宿主拒绝（无 Key / 另一视图占用），error/done
+     * 会把状态纠正回来。 */
+    setBusy(true);
     vscode.postMessage({ type: 'send', text: text });
   }
 

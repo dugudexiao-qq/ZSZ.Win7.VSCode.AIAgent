@@ -13,12 +13,26 @@
  *     is prepended to the prompt of a small model;
  *   - one note per category (stable id) — a repeated mistake bumps the hit
  *     count instead of piling up near-duplicates;
- *   - a fixed cap, oldest dropped first, so memory cannot grow without bound;
+ *   - no fixed item count: keep every distinct lesson until a total character
+ *     budget is reached, then drop the oldest. The budget bounds the prompt
+ *     size without throwing away a just-learned note at an arbitrary "12";
  *   - lessons live in their own store: they never eat the user's 20 rule slots.
  */
 
-const MAX_LESSONS = 12;
+/* 旧版 12 条硬上限已解除：现在按总字符预算裁剪（约 60+ 条普通经验），
+ * 既不再莫名其妙丢掉刚学到的经验，也不会让提示词无限膨胀。 */
+const MAX_LESSON_TOTAL_CHARS = 12000;
 const MAX_LESSON_CHARS = 180;
+
+/* 超出预算时从最旧的开始丢，至少保留一条，避免空列表。 */
+function trimByBudget(items) {
+  let total = 0;
+  for (let i = 0; i < items.length; i++) { total += items[i].text.length; }
+  while (items.length > 1 && total > MAX_LESSON_TOTAL_CHARS) {
+    total -= items.shift().text.length;
+  }
+  return items;
+}
 
 function toolLabel(failure) {
   const tool = String((failure && failure.tool) || '');
@@ -167,7 +181,7 @@ function normalizeLessons(list) {
       at: Number(raw && raw.at) || 0
     });
   }
-  return out.slice(-MAX_LESSONS);
+  return trimByBudget(out);
 }
 
 /* failure = { tool, error }. Returns { id, text } or null.
@@ -203,12 +217,11 @@ function addLesson(list, incoming) {
     items.splice(idx, 1);
   }
   items.push({ id: id, text: text, hits: hits, at: Date.now() });
-  while (items.length > MAX_LESSONS) { items.shift(); }
-  return items;
+  return trimByBudget(items);
 }
 
 module.exports = {
-  MAX_LESSONS: MAX_LESSONS,
+  MAX_LESSON_TOTAL_CHARS: MAX_LESSON_TOTAL_CHARS,
   MAX_LESSON_CHARS: MAX_LESSON_CHARS,
   PATTERNS: PATTERNS,
   sanitizeLessonText: sanitizeLessonText,

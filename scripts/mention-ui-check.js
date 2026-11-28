@@ -536,6 +536,27 @@ check('the Send button keeps its name while a reply is running', function () {
   assert.strictEqual(els.send.textContent, 'Send');
 });
 
+/* ---- v1.13.9 点发送后 Stop 立即可用 ---- */
+
+check('Stop is enabled the instant a request is sent, not after the model starts', function () {
+  hostMessage({ type: 'busy', value: false, elapsedMs: 100 });
+  assert.strictEqual(els.stop.disabled, true, 'precondition: Stop starts disabled when idle');
+
+  input.value = '读一下 src/a.js';
+  input.selectionStart = input.value.length;
+  const before = posted.length;
+  fire(els.send, 'click');
+  assert.ok(posted.slice(before).some(function (m) { return m.type === 'send'; }),
+    'clicking Send must actually dispatch the request');
+  assert.strictEqual(els.stop.disabled, false,
+    'Stop must be usable while waiting for the model, not only after the first token');
+  assert.strictEqual(els.send.disabled, false, 'Send must stay enabled so follow-ups can queue');
+
+  hostMessage({ type: 'done' });
+  assert.strictEqual(els.stop.disabled, true, 'a finished round must disable Stop again');
+  hostMessage({ type: 'busy', value: false, elapsedMs: 100 });
+});
+
 /* ---- v1.12.7 顶端记忆容量条 ---- */
 
 check('the memory bar reports what was forgotten or compressed, not a stuck 100%', function () {

@@ -1191,7 +1191,7 @@ function activate(context) {
         action: 'toggle'
       });
       const pick = await vscode.window.showQuickPick(items, {
-        placeHolder: '经验记忆 ' + list.length + '/' + lessonsLib.MAX_LESSONS + ' 条｜自动学习 ' +
+        placeHolder: '经验记忆 ' + list.length + ' 条（已无条数上限）｜自动学习 ' +
           (config.autoLearn ? '开' : '关') + '｜选中一条可直接删除'
       });
       if (!pick) { return; }
